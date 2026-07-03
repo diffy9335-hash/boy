@@ -15,7 +15,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
  
 # --- НАСТРОЙКА ЛОГОВ И ТОКЕНА ---
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8494602735:AAGbzBwtrk1ZycDpubMjOVRhGQWKivQYzzU" # Замени на свой токен, если нужно
+BOT_TOKEN = "8494602735:AAGbzBwtrk1ZycDpubMjOVRhGQWKivQYzzU" # Замени на свой токен
  
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -35,7 +35,6 @@ def _load_data_sync(filename):
             with open(filename, "r", encoding="utf-8") as f:
                 return json.load(f)
         except json.JSONDecodeError as e:
-            # ЗАЩИТА ОТ КРАША: Если файл сломался из-за сбоя хостинга, бэкапим его и отдаем пустой словарь
             backup_name = f"{filename}.corrupted_{int(time.time())}"
             os.replace(filename, backup_name)
             logging.error(f"Файл {filename} был поврежден ({e}) и переименован в {backup_name}. Создан новый.")
@@ -64,7 +63,6 @@ async def save_data(filename, data):
     async with lock:
         await asyncio.to_thread(_save_data_sync, filename, data)
 
-# Система слотов карьер
 async def get_active_slot(user_id: str):
     slots = await load_data(SLOTS_FILE)
     return slots.get(str(user_id), "1")
@@ -79,7 +77,6 @@ async def get_uid(event):
     slot = await get_active_slot(tg_id)
     return f"{tg_id}_{slot}"
 
-# --- ЗАЩИТА ОТ ГОНКИ ДАННЫХ ---
 _user_locks = {}
 _table_lock = None
  
@@ -102,7 +99,20 @@ def with_user_lock(func):
         async with lock:
             return await func(event, *args, **kwargs)
     return wrapper
- 
+
+# --- МИГРАЦИЯ ДАННЫХ (ЗАЩИТА ОТ КРАШЕЙ) ---
+def migrate_player_data(p):
+    if not p: return p
+    rating = float(p.get("rating", 40))
+    if "skills" not in p:
+        p["skills"] = {"tech": rating, "phys": rating, "shoot": rating, "def": rating, "gk": rating}
+    if "wc_stage" not in p: p["wc_stage"] = "Группа 1"
+    if "contract_salary" not in p: p["contract_salary"] = 1500
+    if "stats_season" not in p: p["stats_season"] = {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0}
+    if "stats_total" not in p: p["stats_total"] = {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0}
+    if "cup_out" not in p: p["cup_out"] = False
+    return p
+
 def retired_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Начать новую карьеру", callback_data="start_new_career")]])
  
@@ -112,10 +122,7 @@ async def deny_if_retired_cb(callback: CallbackQuery, p) -> bool:
         return True
     if p.get("retired"):
         try:
-            await callback.message.edit_text(
-                "🏁 **Твоя карьера уже завершена!**\nЭта кнопка осталась от старого меню — нажми ниже, чтобы начать новую карьеру.",
-                parse_mode="Markdown", reply_markup=retired_keyboard()
-            )
+            await callback.message.edit_text("🏁 **Твоя карьера уже завершена!**", parse_mode="Markdown", reply_markup=retired_keyboard())
         except:
             await callback.message.answer("🏁 **Твоя карьера уже завершена!**", reply_markup=retired_keyboard())
         return True
@@ -126,10 +133,7 @@ async def deny_if_retired_msg(message: Message, p) -> bool:
         await message.answer("⚠️ Профиль не найден. Нажми /start, чтобы начать.", parse_mode="Markdown")
         return True
     if p.get("retired"):
-        await message.answer(
-            "🏁 **Твоя карьера уже завершена!**\nНажми ниже, чтобы начать новую карьеру.",
-            parse_mode="Markdown", reply_markup=retired_keyboard()
-        )
+        await message.answer("🏁 **Твоя карьера уже завершена!**\nНажми ниже, чтобы начать новую карьеру.", parse_mode="Markdown", reply_markup=retired_keyboard())
         return True
     return False
  
@@ -161,14 +165,8 @@ EURO_NATIONS = [
     "Дания", "Швейцария", "Польша", "Швеция", "Норвегия", "Сербия", "Турция"
 ]
 
-COPA_NATIONS = [
-    "Аргентина", "Бразилия", "Мексика", "США", "Колумбия", "Уругвай"
-]
-
-OTHER_NATIONS = [
-    "Марокко", "Сенегал", "Нигерия", "Камерун", "Япония", "Южная Корея", "Австралия", "Иран", "Египет"
-]
-
+COPA_NATIONS = ["Аргентина", "Бразилия", "Мексика", "США", "Колумбия", "Уругвай"]
+OTHER_NATIONS = ["Марокко", "Сенегал", "Нигерия", "Камерун", "Япония", "Южная Корея", "Австралия", "Иран", "Египет"]
 NATIONS = EURO_NATIONS + COPA_NATIONS + OTHER_NATIONS
 
 NATION_RATINGS = {
@@ -246,7 +244,7 @@ def get_division(club_name):
 def get_status_by_trust(trust):
     if 0 <= trust <= 20: return "Глубокий резерв ❌"
     elif 21 <= trust <= 50: return "Скамейка запасных 🪑"
-    elif 51 <= trust <= 75: return "Джокер (Выход на замену) ⏱️"
+    elif 51 <= trust <= 75: return "Джокер (Замена) ⏱️"
     return "Игрок старта 🔥"
  
 def calculate_player_value(rating, division):
@@ -264,31 +262,26 @@ async def add_to_retired_leaderboard(name, rating, trophies_count):
     if "top_careers" not in leaderboard:
         leaderboard["top_careers"] = []
     
-    leaderboard["top_careers"].append({
-        "name": name,
-        "rating": rating,
-        "trophies": trophies_count
-    })
-    
+    leaderboard["top_careers"].append({"name": name, "rating": rating, "trophies": trophies_count})
     leaderboard["top_careers"] = sorted(leaderboard["top_careers"], key=lambda x: (x["rating"], x["trophies"]), reverse=True)[:10]
     await save_data(LEADERBOARD_FILE, leaderboard)
 
-# Трекинг активности
 async def track_activity(user_id: str):
     players = await load_data(PLAYERS_FILE)
     if user_id in players:
+        players[user_id] = migrate_player_data(players[user_id])
         players[user_id]["activity_ticks"] = players[user_id].get("activity_ticks", 0) + 1
         await save_data(PLAYERS_FILE, players)
  
 def _init_tables_internal(tables, user_id, division, player_club=None):
     clubs_list = CLUBS[division].copy()
     if player_club and player_club not in clubs_list:
-        clubs_list[-1] = player_club
+        clubs_list.append(player_club)
         
-    division_table = [{"club": club, "points": 0, "wins": 0, "draws": 0, "losses": 0} for club in clubs_list]
-    if user_id not in tables:
-        tables[user_id] = {}
-    tables[user_id][division] = division_table
+    # Защита от дублей в таблицах
+    unique_clubs = {c: {"club": c, "points": 0, "wins": 0, "draws": 0, "losses": 0} for c in clubs_list}
+    tables.setdefault(user_id, {})
+    tables[user_id][division] = list(unique_clubs.values())
 
 async def init_tables_for_user(user_id, division, player_club=None):
     async with get_table_lock():
@@ -304,6 +297,10 @@ async def simulate_table_tour(user_id, division, player_club, player_match_rival
             
         table = tables[user_id][division]
         
+        # Доп проверка от вылетов после перехода
+        if not any(row["club"] == player_club for row in table):
+            table.append({"club": player_club, "points": 0, "wins": 0, "draws": 0, "losses": 0})
+
         for row in table:
             if row["club"] == player_club:
                 if player_match_outcome == "win": row["points"] += 3; row["wins"] += 1
@@ -389,12 +386,14 @@ def check_random_events(p):
 async def main_menu_keyboard(username: str = None, user_id: str = None):
     match_btn_text = "🎮 Матч"
     if user_id:
-        p = (await load_data(PLAYERS_FILE)).get(user_id)
+        p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
         if p and p.get("tour", 1) > 15:
-            if p.get("rating", 40) >= 78:
+            season = p.get("season", 1)
+            # Евро(3,7,11) или ЧМ(4,8,12)
+            if season in [3, 4, 7, 8, 11, 12] and p.get("rating", 40) >= 75 and p.get("wc_stage") not in ["Вылет", "Победитель"]:
                 match_btn_text = "🌐 Сборная"
             else:
-                match_btn_text = "🏁 Итоги сезона"
+                match_btn_text = "🏁 Итоги сезона / Контракты"
                 
     kb = [
         [InlineKeyboardButton(text="🏋️‍♂️ Тренировка", callback_data="menu_train_choice"), InlineKeyboardButton(text=match_btn_text, callback_data="menu_match")],
@@ -415,19 +414,17 @@ async def online_handler(callback: CallbackQuery):
     total = len(players)
     online = max(1, int(total * 0.15) + random.randint(1, 4))
     
-    # Расчет топа по активности
     top_active = sorted(players.values(), key=lambda x: x.get("activity_ticks", 0), reverse=True)[:5]
     top_text = "\n\n🔥 **Топ игроков по активности (за неделю):**\n"
     for i, p in enumerate(top_active, 1):
         top_text += f"{i}. {p['name']} ({p.get('activity_ticks', 0)} очков)\n"
 
-    await callback.answer(f"🟢 Сейчас в боте: {online} чел.\n👥 Всего игроков в базе: {total}", show_alert=True)
+    await callback.answer(f"🟢 Сейчас в боте: {online} чел.\n👥 Всего игроков: {total}", show_alert=True)
     
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(top_text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
-    else:
+    try:
         await callback.message.edit_text(top_text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
+    except:
+        await callback.message.answer(top_text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
  
 @dp.callback_query(F.data == "menu_support")
 async def support_handler(callback: CallbackQuery):
@@ -437,11 +434,8 @@ async def support_handler(callback: CallbackQuery):
         "❤️ **Поддержать разраба на развитие бота:**\n"
         "Реквизиты: `2200701958479393` т-банк"
     )
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(text, reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)), parse_mode="Markdown")
-    else:
-        await callback.message.edit_text(text, reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)), parse_mode="Markdown")
+    try: await callback.message.edit_text(text, reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)), parse_mode="Markdown")
+    except: await callback.message.answer(text, reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)), parse_mode="Markdown")
 
 # --- ЛИЧНАЯ ЖИЗНЬ ---
 @dp.callback_query(F.data == "menu_personal_life")
@@ -449,7 +443,7 @@ async def support_handler(callback: CallbackQuery):
 async def personal_life_menu(callback: CallbackQuery):
     user_id = await get_uid(callback)
     await track_activity(user_id)
-    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
     if await deny_if_retired_cb(callback, p): return
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -465,20 +459,19 @@ async def personal_life_menu(callback: CallbackQuery):
             f"🔋 Усталость: {p.get('fatigue', 0)}%\n\n"
             f"Трать деньги, чтобы улучшать настроение и снижать усталость!")
 
-    await callback.message.delete()
-    await callback.message.answer(text=text, reply_markup=kb, parse_mode="Markdown")
+    try: await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="Markdown")
+    except: await callback.message.answer(text=text, reply_markup=kb, parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("personal:"))
 @with_user_lock
 async def personal_action(callback: CallbackQuery):
     user_id = await get_uid(callback)
     players = await load_data(PLAYERS_FILE)
-    p = players.get(user_id)
+    p = migrate_player_data(players.get(user_id))
     if await deny_if_retired_cb(callback, p): return
 
     action = callback.data.split(":")[1]
-    cost = 0
-    msg = ""
+    cost = 0; msg = ""
 
     if action == "rest":
         cost = 500
@@ -493,29 +486,29 @@ async def personal_action(callback: CallbackQuery):
             if p.get("money", 0) >= cost:
                 p["girlfriend"] = "Есть"
                 p["mood"] = min(100, p.get("mood", 100) + 30)
-                msg = "💃 Ты познакомился с потрясающей девушкой! Настроение взлетело!"
-            else: msg = "❌ Не хватает денег на красивые ухаживания."
+                msg = "💃 Ты познакомился с потрясающей девушкой!"
+            else: msg = "❌ Не хватает денег на ухаживания."
         else:
             cost = 1000
             if p.get("money", 0) >= cost:
                 p["mood"] = min(100, p.get("mood", 100) + 15)
                 p["fatigue"] = max(0, p.get("fatigue", 0) - 20)
-                msg = "🎁 Ты подарил девушке дорогие украшения! Настроение +15%, Усталость -20%."
-            else: msg = "❌ Не хватает денег на достойный подарок."
+                msg = "🎁 Ты подарил девушке дорогие украшения! Усталость -20%."
+            else: msg = "❌ Не хватает денег на подарок."
     elif action == "car":
         cost = 50000
         if p.get("money", 0) >= cost:
             p["cars"] = p.get("cars", 0) + 1
             p["mood"] = 100
             msg = "🚗 Ты купил роскошный спорткар!"
-        else: msg = "❌ Не хватает денег на авто."
+        else: msg = "❌ Не хватает денег."
     elif action == "house":
         cost = 250000
         if p.get("money", 0) >= cost:
             p["houses"] = p.get("houses", 0) + 1
             p["mood"] = 100
             msg = "🏠 Ты приобрел огромный особняк!"
-        else: msg = "❌ Не хватает денег на недвижимость."
+        else: msg = "❌ Не хватает денег."
 
     if "❌" not in msg:
         p["money"] -= cost
@@ -524,19 +517,7 @@ async def personal_action(callback: CallbackQuery):
     players[user_id] = p
     await save_data(PLAYERS_FILE, players)
     await callback.answer(msg, show_alert=True)
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🍽 В ресторан (-500$)", callback_data="personal:rest")],
-        [InlineKeyboardButton(text="💃 Найти девушку (-2000$)" if p.get("girlfriend", "Нет") == "Нет" else "🎁 Подарок девушке (-1000$)", callback_data="personal:girl")],
-        [InlineKeyboardButton(text="🚗 Купить авто (-50,000$)", callback_data="personal:car"), InlineKeyboardButton(text="🏠 Купить дом (-250,000$)", callback_data="personal:house")],
-        [InlineKeyboardButton(text="❤️ Пожертвовать", callback_data="menu_donate"), InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
-    ])
-    text = (f"🍷 **ЛИЧНАЯ ЖИЗНЬ**\n━━━━━━━━━━━━━━━━━━━━\n"
-            f"💵 Баланс: {p.get('money', 0)}$\n"
-            f"💖 Настроение: {p.get('mood', 100)}%\n"
-            f"🔋 Усталость: {p.get('fatigue', 0)}%\n\n"
-            f"Трать деньги, чтобы улучшать настроение и статус!")
-    await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="Markdown")
+    await personal_life_menu(callback)
  
 # --- АДМИН-ПАНЕЛЬ ---
 @dp.callback_query(F.data == "admin_panel")
@@ -544,19 +525,10 @@ async def admin_panel_handler(callback: CallbackQuery, state: FSMContext):
     if not callback.from_user.username or callback.from_user.username.replace("@", "") not in ADMINS:
         return await callback.answer("У вас нет доступа к этой панели.", show_alert=True)
     
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(
-            "👑 **Админ-панель**\n\nОтправьте мне **ID пользователя** (например 123456_1) для управления:", 
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="back_to_menu")]])
-        )
-    else:
-        await callback.message.edit_text(
-            "👑 **Админ-панель**\n\nОтправьте мне **ID пользователя** для управления:", 
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="back_to_menu")]])
-        )
+    text = "👑 **Админ-панель**\n\nОтправьте мне **ID пользователя** для управления:"
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="back_to_menu")]])
+    try: await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except: await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
     await state.set_state(AdminPanel.waiting_for_user_id)
  
 @dp.message(AdminPanel.waiting_for_user_id)
@@ -572,21 +544,16 @@ async def admin_user_management(message: Message, state: FSMContext):
  
 async def show_admin_user_profile(message_or_call, target_id):
     players = await load_data(PLAYERS_FILE)
-    p = players[target_id]
+    p = migrate_player_data(players[target_id])
     val = calculate_player_value(p["rating"], p["division"])
     
-    stats_text = ""
-    if p["position"] == "GK": stats_text = f"🧤 Сейвы: {p['stats_season'].get('saves', 0)}"
-    elif p["position"] == "CB": stats_text = f"🛡️ Отборы: {p['stats_season'].get('tackles', 0)} | ⚽ Голы: {p['stats_season'].get('goals', 0)}"
-    else: stats_text = f"⚽ Голы: {p['stats_season'].get('goals', 0)} | 🅰️ Ассисты: {p['stats_season'].get('assists', 0)}"
- 
     text = (
-        f"👑 ПРОФИЛЬ ИГРОКА (ID: `{target_id}`)\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"👑 ПРОФИЛЬ ИГРОКА (ID: `{target_id}`)\n"
         f"🏃‍♂️ {p['name']} | 🌍 {p.get('nation', 'Россия')} | 🎂 {p.get('age', 17)} лет\n"
         f"⚡️ Рейтинг: {p['rating']}/100\n"
         f"🏢 Клуб: {p['club']} ({p['position']})\n"
-        f"💵 Баланс: {p.get('money', 0)}$ | 🏷️ Стоимость: {val:,}$\n"
-        f"🏟️ Сезон: {p['season']} | Тур: {p['tour']}/15\n━━━━━━━━━━━━━━━━━━━━\n{stats_text}"
+        f"💵 Баланс: {p.get('money', 0)}$\n"
+        f"🏟️ Сезон: {p['season']} | Тур: {p['tour']}/15"
     )
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -597,31 +564,27 @@ async def show_admin_user_profile(message_or_call, target_id):
         [InlineKeyboardButton(text="🔙 В меню", callback_data="back_to_menu")]
     ])
     
-    if isinstance(message_or_call, Message):
-        await message_or_call.answer(text, reply_markup=kb)
-    else:
-        await message_or_call.message.edit_text(text, reply_markup=kb)
+    if isinstance(message_or_call, Message): await message_or_call.answer(text, reply_markup=kb)
+    else: await message_or_call.message.edit_text(text, reply_markup=kb)
  
 @dp.callback_query(F.data.startswith("adm_tour:"))
 async def adm_skip_tour(callback: CallbackQuery):
-    if not callback.from_user.username or callback.from_user.username.replace("@", "") not in ADMINS:
-        return await callback.answer("Ошибка доступа.", show_alert=True)
     target_id = callback.data.split(":")[1]
     async with get_user_lock(target_id):
         players = await load_data(PLAYERS_FILE)
         if target_id in players:
+            players[target_id] = migrate_player_data(players[target_id])
             players[target_id]["tour"] += 1
             await save_data(PLAYERS_FILE, players)
             await show_admin_user_profile(callback, target_id)
  
 @dp.callback_query(F.data.startswith("adm_season:"))
 async def adm_skip_season(callback: CallbackQuery):
-    if not callback.from_user.username or callback.from_user.username.replace("@", "") not in ADMINS:
-        return await callback.answer("Ошибка доступа.", show_alert=True)
     target_id = callback.data.split(":")[1]
     async with get_user_lock(target_id):
         players = await load_data(PLAYERS_FILE)
         if target_id in players:
+            players[target_id] = migrate_player_data(players[target_id])
             players[target_id]["season"] += 1
             players[target_id]["tour"] = 1
             await save_data(PLAYERS_FILE, players)
@@ -687,16 +650,21 @@ async def select_slot_handler(callback: CallbackQuery, state: FSMContext):
     players = await load_data(PLAYERS_FILE)
     
     if user_id in players and not players[user_id].get("retired", False):
+        players[user_id] = migrate_player_data(players[user_id])
         players[user_id]["username_tg"] = callback.from_user.username
         await save_data(PLAYERS_FILE, players)
-        await callback.message.edit_text(f"👋 **С возвращением, {players[user_id]['name']}!** (Слот {slot})\nТвой ID: `{user_id}`", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id), parse_mode="Markdown")
+        try: await callback.message.edit_text(f"👋 **С возвращением, {players[user_id]['name']}!** (Слот {slot})\nТвой ID: `{user_id}`", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id), parse_mode="Markdown")
+        except: await callback.message.answer(f"👋 **С возвращением, {players[user_id]['name']}!** (Слот {slot})\nТвой ID: `{user_id}`", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id), parse_mode="Markdown")
     else:
         if user_id in players and players[user_id].get("retired", False):
             history = players[user_id].get("career_history", [])
             await state.update_data(career_history=history)
-            await callback.message.edit_text(f"⚽ **Твоя прошлая карьера (Слот {slot}) окончена. Начнем новую!**\nДля начала введи Имя и Фамилию:", parse_mode="Markdown")
+            text = f"⚽ **Твоя прошлая карьера (Слот {slot}) окончена. Начнем новую!**\nДля начала введи Имя и Фамилию:"
         else:
-            await callback.message.edit_text(f"⚽ **Создаем профиль в Слоте {slot}!**\nДля начала введи Имя и Фамилию:", parse_mode="Markdown")
+            text = f"⚽ **Создаем профиль в Слоте {slot}!**\nДля начала введи Имя и Фамилию:"
+        
+        try: await callback.message.edit_text(text, parse_mode="Markdown")
+        except: await callback.message.answer(text, parse_mode="Markdown")
         await state.set_state(PlayerCreation.waiting_for_name)
 
 @dp.message(PlayerCreation.waiting_for_name)
@@ -714,7 +682,8 @@ async def process_name(message: Message, state: FSMContext):
 async def process_nation(callback: CallbackQuery, state: FSMContext):
     await state.update_data(nation=callback.data.split(":")[1])
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=pos, callback_data=f"pos:{POSITIONS[pos]}")] for pos in POSITIONS.keys()])
-    await callback.message.edit_text("📋 **Выбери амплуа:**", reply_markup=kb, parse_mode="Markdown")
+    try: await callback.message.edit_text("📋 **Выбери амплуа:**", reply_markup=kb, parse_mode="Markdown")
+    except: await callback.message.answer("📋 **Выбери амплуа:**", reply_markup=kb, parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_position)
  
 @dp.callback_query(PlayerCreation.waiting_for_position, F.data.startswith("pos:"))
@@ -725,7 +694,8 @@ async def process_position(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🏴󠁧󠁢󠁥󠁮󠁧󠁿 Англия", callback_data="league:Англия"), InlineKeyboardButton(text="🇪🇸 Испания", callback_data="league:Испания")],
         [InlineKeyboardButton(text="🇮🇹 Италия", callback_data="league:Италия"), InlineKeyboardButton(text="🇩🇪 Германия", callback_data="league:Германия")]
     ])
-    await callback.message.edit_text("🌍 **В какой стране начнешь карьеру?**", reply_markup=kb, parse_mode="Markdown")
+    try: await callback.message.edit_text("🌍 **В какой стране начнешь карьеру?**", reply_markup=kb, parse_mode="Markdown")
+    except: await callback.message.answer("🌍 **В какой стране начнешь карьеру?**", reply_markup=kb, parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_country_league)
  
 @dp.callback_query(PlayerCreation.waiting_for_country_league, F.data.startswith("league:"))
@@ -739,7 +709,8 @@ async def process_country_league(callback: CallbackQuery, state: FSMContext):
     else: div = "Серия Б"
     
     await state.update_data(start_division=div)
-    await callback.message.edit_text("🔢 **Введи номер (1 - 99):**", parse_mode="Markdown")
+    try: await callback.message.edit_text("🔢 **Введи желаемый номер (1 - 99):**", parse_mode="Markdown")
+    except: await callback.message.answer("🔢 **Введи желаемый номер (1 - 99):**", parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_number)
  
 @dp.message(PlayerCreation.waiting_for_number)
@@ -771,6 +742,7 @@ async def process_club(callback: CallbackQuery, state: FSMContext):
         "club": chosen_club,
         "division": get_division(chosen_club),
         "rating": 40,
+        "skills": {"tech": 40.0, "phys": 40.0, "shoot": 40.0, "def": 40.0, "gk": 40.0},
         "trust": 15,
         "mood": 100,
         "fatigue": 0,
@@ -790,9 +762,7 @@ async def process_club(callback: CallbackQuery, state: FSMContext):
         "cup_stage": "1/16",
         "cup_rivals": [],
         "played_league_rivals": [],
-        "wc_out": False,
-        "wc_stage": "Группа 1 матч",
-        "wc_points": 0,
+        "wc_stage": "Группа 1",
         "wc_rivals": [],
         "trophies": [],
         "stats_season": {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0},
@@ -812,7 +782,9 @@ async def process_club(callback: CallbackQuery, state: FSMContext):
     await init_tables_for_user(user_id, player_profile["division"], player_profile["club"])
     
     await state.clear()
-    await callback.message.edit_text(f"✍️ **КОНТРАКТ ПОДПИСАН!** Добро пожаловать в {player_profile['club']}!\n💰 Твоя зарплата: {player_profile['contract_salary']}$ за матч.", parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
+    text = f"✍️ **КОНТРАКТ ПОДПИСАН!** Добро пожаловать в {player_profile['club']}!\n💰 Твоя зарплата: {player_profile['contract_salary']}$ за матч."
+    try: await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
+    except: await callback.message.answer(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
  
 @dp.callback_query(F.data == "start_new_career")
 @with_user_lock
@@ -822,11 +794,10 @@ async def start_new_career_handler(callback: CallbackQuery, state: FSMContext):
     if user_id in players:
         history = players[user_id].get("career_history", [])
         await state.update_data(career_history=history)
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer("⚽ **Добро пожаловать обратно! Начнем заново!**\nДля начала введи Имя и Фамилию:", parse_mode="Markdown")
-    else:
-        await callback.message.edit_text("⚽ **Добро пожаловать обратно! Начнем заново!**\nДля начала введи Имя и Фамилию:", parse_mode="Markdown")
+        
+    text = "⚽ **Добро пожаловать обратно! Начнем заново!**\nДля начала введи Имя и Фамилию:"
+    try: await callback.message.edit_text(text, parse_mode="Markdown")
+    except: await callback.message.answer(text, parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_name)
  
 @dp.callback_query(F.data == "delete_career")
@@ -837,15 +808,16 @@ async def delete_career_handler(callback: CallbackQuery):
     if user_id in players:
         del players[user_id]
         await save_data(PLAYERS_FILE, players)
-    await callback.message.edit_text("🗑 **Карьера удалена!** Нажми /start, чтобы создать новую.", parse_mode="Markdown")
+    try: await callback.message.edit_text("🗑 **Карьера удалена!** Нажми /start, чтобы создать новую.", parse_mode="Markdown")
+    except: await callback.message.answer("🗑 **Карьера удалена!** Нажми /start, чтобы создать новую.", parse_mode="Markdown")
 
-# --- ТРЕНИРОВКИ, ТАБЛИЦЫ, СЛУЖЕБНЫЕ МЕНЮ ---
+# --- ТРЕНИРОВКИ ---
 @dp.callback_query(F.data == "menu_train_choice")
 @with_user_lock
 async def train_choice_handler(callback: CallbackQuery):
     user_id = await get_uid(callback)
     await track_activity(user_id)
-    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
     if await deny_if_retired_cb(callback, p): return
         
     if p.get("injury_tours", 0) > 0:
@@ -857,80 +829,93 @@ async def train_choice_handler(callback: CallbackQuery):
     if p.get("fatigue", 0) >= 90:
         return await callback.answer("🚫 Вы слишком устали! Сходите в ресторан или отдохните.", show_alert=True)
 
-    if p["position"] == "GK":
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🧤 Реакция", callback_data="train:tech"), InlineKeyboardButton(text="🏃 Физика", callback_data="train:phys")],
-            [InlineKeyboardButton(text="⚽ Игра ногами", callback_data="train:shoot"), InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
-        ])
-    else:
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⚡ Техника", callback_data="train:tech"), InlineKeyboardButton(text="🏃 Физика", callback_data="train:phys")],
-            [InlineKeyboardButton(text="🎯 Удар / Отбор", callback_data="train:shoot"), InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
-        ])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚡ Техника", callback_data="train:tech"), InlineKeyboardButton(text="🏃 Физика", callback_data="train:phys")],
+        [InlineKeyboardButton(text="🎯 Удар", callback_data="train:shoot"), InlineKeyboardButton(text="🛡️ Защита", callback_data="train:def")],
+        [InlineKeyboardButton(text="🧤 Реакция", callback_data="train:gk"), InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
+    ])
+    
+    text = (
+        f"🏋️‍♂️ **ТРЕНИРОВКА**\n"
+        f"Твой статус в команде: {get_status_by_trust(p['trust'])}\n\n"
+        f"📈 **Твои навыки (влияют на общий рейтинг):**\n"
+        f"⚡ Техника: {p['skills']['tech']:.1f} | 🏃 Физика: {p['skills']['phys']:.1f}\n"
+        f"🎯 Удар: {p['skills']['shoot']:.1f} | 🛡️ Защита: {p['skills']['def']:.1f}\n"
+        f"🧤 Реакция: {p['skills']['gk']:.1f}\n\n"
+        f"Выбери навык для тренировки:"
+    )
         
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer("🏋️‍♂️ **ТРЕНИРОВКА**", reply_markup=kb, parse_mode="Markdown")
-    else:
-        await callback.message.edit_text("🏋️‍♂️ **ТРЕНИРОВКА**", reply_markup=kb, parse_mode="Markdown")
+    try: await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    except: await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
  
 @dp.callback_query(F.data == "back_to_menu")
 async def back_to_menu_handler(callback: CallbackQuery):
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer("🏠 Главное меню.", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
-    else:
-        await callback.message.edit_text("🏠 Главное меню.", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
+    try: await callback.message.edit_text("🏠 Главное меню.", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
+    except: await callback.message.answer("🏠 Главное меню.", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
  
 @dp.callback_query(F.data.startswith("train:"))
 @with_user_lock
 async def train_execute_handler(callback: CallbackQuery):
     user_id = await get_uid(callback)
     players = await load_data(PLAYERS_FILE)
-    p = players.get(user_id)
+    p = migrate_player_data(players.get(user_id))
     if await deny_if_retired_cb(callback, p): return
         
     if p.get("injury_tours", 0) > 0:
         return await callback.answer("🚑 Вы травмированы! Тренировка недоступна.", show_alert=True)
     
-    p["trust"] = min(100, p["trust"] + random.randint(6, 14))
+    stat_key = callback.data.split(":")[1]
+    
+    trust_gain = random.randint(6, 14)
+    p["trust"] = min(100, p["trust"] + trust_gain)
     p["train_done"] = True
     p["fatigue"] = min(100, p.get("fatigue", 0) + 10)
+    
+    # Расчет прироста навыка
+    stat_gain = round(random.uniform(0.1, 0.4), 1)
+    if p["skills"][stat_key] >= 90: stat_gain = round(random.uniform(0.05, 0.15), 1)
+    
+    p["skills"][stat_key] += stat_gain
+    
+    # Пересчет общего рейтинга
+    old_rating = p["rating"]
+    avg_rating = sum(p["skills"].values()) / 5.0
+    p["rating"] = min(100, int(avg_rating))
+    rating_msg = f"\n⚡ **Твой общий рейтинг вырос до {p['rating']}!**" if p["rating"] > old_rating else ""
     
     if random.random() < 0.015:
         p["injury_tours"] = random.randint(1, 2)
         p["is_injured"] = True
         players[user_id] = p
         await save_data(PLAYERS_FILE, players)
-        await callback.message.delete()
-        return await callback.message.answer(text=f"🚑 **ОЙ!** На тренировке ты потянул мышцу. Выбыл на {p['injury_tours']} тур(а).", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_menu")]]))
-    
-    rating_chance = 0.35 if callback.data.split(":")[1] in ["tech", "shoot"] else 0.20
-    current_rating = p.get("rating", 40)
-    
-    if current_rating >= 95: rating_chance *= 0.05
-    elif current_rating >= 90: rating_chance *= 0.15
-    elif current_rating >= 85: rating_chance *= 0.30
-    elif current_rating >= 75: rating_chance *= 0.60
-    
-    if random.random() < rating_chance:
-        p["rating"] = min(100, p["rating"] + 1)
+        msg = f"🚑 **ОЙ!** На тренировке ты потянул мышцу. Выбыл на {p['injury_tours']} тур(а)."
+        try: return await callback.message.edit_text(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_menu")]]))
+        except: return await callback.message.answer(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_menu")]]))
  
     players[user_id] = p
     await save_data(PLAYERS_FILE, players)
-    await callback.message.delete()
-    await callback.message.answer(text="💪 **Тренировка завершена!** Доверие повышено.", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_menu")]]))
+    
+    stat_names = {"tech": "Техника", "phys": "Физика", "shoot": "Удар", "def": "Защита", "gk": "Реакция"}
+    
+    text = (f"💪 **Тренировка успешно завершена!**\n\n"
+            f"📈 Навык ({stat_names[stat_key]}) увеличен: **+{stat_gain}**\n"
+            f"🤝 Доверие тренера: **+{trust_gain}%** (Статус: {get_status_by_trust(p['trust'])})"
+            f"{rating_msg}")
+            
+    try: await callback.message.edit_text(text=text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_menu")]]))
+    except: await callback.message.answer(text=text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_menu")]]))
  
+# --- ТАБЛИЦА И ПРОФИЛЬ ---
 @dp.callback_query(F.data == "menu_table")
 @with_user_lock
 async def show_table_handler(callback: CallbackQuery):
     user_id = await get_uid(callback)
     await track_activity(user_id)
     tables = await load_data(TABLES_FILE)
-    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
     if await deny_if_retired_cb(callback, p): return
 
-    if user_id not in tables or p["division"] not in tables[user_id]: 
+    if user_id not in tables or p["division"] not in tables.get(user_id, {}): 
         await init_tables_for_user(user_id, p["division"], p["club"])
         tables = await load_data(TABLES_FILE)
         
@@ -941,21 +926,17 @@ async def show_table_handler(callback: CallbackQuery):
         is_p = "👉 " if row["club"] == p["club"] else "• "
         text += f"{i}. {is_p}**{row['club']}** — {row['points']} очков ({row['wins']}В / {row['draws']}Н / {row['losses']}П)\n"
         
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
-    else:
-        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
+    try: await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
+    except: await callback.message.answer(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
  
 @dp.callback_query(F.data == "menu_profile")
 @with_user_lock
 async def profile_handler(callback: CallbackQuery):
     user_id = await get_uid(callback)
     await track_activity(user_id)
-    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
     if not p:
-        await callback.message.answer("⚠️ Профиль не найден. Нажми /start, чтобы начать.", parse_mode="Markdown")
-        return
+        return await callback.message.answer("⚠️ Профиль не найден. Нажми /start, чтобы начать.", parse_mode="Markdown")
  
     if p.get("retired"):
         history_str = "\n\n".join(p.get("career_history", [])) or "—"
@@ -965,12 +946,8 @@ async def profile_handler(callback: CallbackQuery):
             f"📚 **Завершенные карьеры (Статистика):**\n{history_str}\n\n"
             f"Нажми кнопку ниже, чтобы начать новую историю."
         )
-        if callback.message.photo:
-            await callback.message.delete()
-            await callback.message.answer(text, parse_mode="Markdown", reply_markup=retired_keyboard())
-        else:
-            await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=retired_keyboard())
-        return
+        try: return await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=retired_keyboard())
+        except: return await callback.message.answer(text, parse_mode="Markdown", reply_markup=retired_keyboard())
  
     val = calculate_player_value(p["rating"], p["division"])
     
@@ -981,11 +958,13 @@ async def profile_handler(callback: CallbackQuery):
     elif p["position"] == "CB": stats_text = f"🛡️ Отборы: {p['stats_season'].get('tackles', 0)} | ⚽ Голы: {p['stats_season'].get('goals', 0)}"
     else: stats_text = f"⚽ Голы: {p['stats_season'].get('goals', 0)} | 🅰️ Ассисты: {p['stats_season'].get('assists', 0)}"
     
+    skills_text = f"⚡ Тех: {p['skills']['tech']:.1f} | 🏃 Физ: {p['skills']['phys']:.1f} | 🎯 Удар: {p['skills']['shoot']:.1f}\n🛡️ Защ: {p['skills']['def']:.1f} | 🧤 Реакция: {p['skills']['gk']:.1f}"
+    
     history_str = ""
     if p.get("career_history"):
         history_str = "\n\n📚 **Прошлые карьеры:**\n" + "\n\n".join(p["career_history"])
  
-    season_display = min(p['season'], 13) # Изменено до 13
+    season_display = min(p['season'], 13)
     tour_display = min(p['tour'], 15)
  
     kb = await main_menu_keyboard(callback.from_user.username, user_id)
@@ -994,31 +973,29 @@ async def profile_handler(callback: CallbackQuery):
     text = (
         f"👑 ПРОФИЛЬ ИГРОКА\n━━━━━━━━━━━━━━━━━━━━\n"
         f"🏃‍♂️ {p['name']} | 🌍 {p.get('nation', 'Россия')} | 🎂 {p.get('age', 17)} лет\n"
-        f"⚡️ Рейтинг: {p['rating']}/100\n"
+        f"⚡️ Общий рейтинг: {p['rating']}/100\n"
         f"🏢 Клуб: {p['club']} ({p['position']}){loan_status}{injury_status}\n"
         f"💵 Баланс: {p.get('money', 0)}$ | 🏷️ Стоимость: {val:,}$\n"
-        f"🤝 Зарплата: {p.get('contract_salary', 0)}$/матч\n"
+        f"🤝 Зарплата: {p.get('contract_salary', 1500)}$/матч\n"
         f"💎 Спонсор: {p.get('sponsor', 'Нет')}\n"
         f"📊 Статус: {get_status_by_trust(p['trust'])}\n"
         f"💖 Настроение: {p.get('mood', 100)}% | 🔋 Усталость: {p.get('fatigue', 0)}%\n"
         f"💍 Девушка: {p.get('girlfriend', 'Нет')}\n"
         f"🚗 Авто: {p.get('cars', 0)} | 🏠 Дома: {p.get('houses', 0)}\n"
         f"🏟️ Сезон: {season_display}/13 | Тур Лиги: {tour_display}/15\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"📈 **Навыки:**\n{skills_text}\n━━━━━━━━━━━━━━━━━━━━\n"
         f"🏆 **Текущая карьера (за сезон):**\n{stats_text}\n"
         f"📈 **Общая статистика (текущий игрок):**\nВсего игр: {p.get('stats_total', {}).get('games', 0)} | Голов: {p.get('stats_total', {}).get('goals', 0)} | Ассистов: {p.get('stats_total', {}).get('assists', 0)}"
         f"{history_str}"
     )
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(text, reply_markup=kb)
-    else:
-        await callback.message.edit_text(text, reply_markup=kb)
+    try: await callback.message.edit_text(text, reply_markup=kb)
+    except: await callback.message.answer(text, reply_markup=kb)
  
 @dp.callback_query(F.data == "menu_sponsors")
 @with_user_lock
 async def sponsors_menu(callback: CallbackQuery):
     user_id = await get_uid(callback)
-    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
     if await deny_if_retired_cb(callback, p): return
     if p["rating"] < 65:
         return await callback.answer("❌ Прокачай рейтинг до 65 для контрактов!", show_alert=True)
@@ -1026,28 +1003,22 @@ async def sponsors_menu(callback: CallbackQuery):
         [InlineKeyboardButton(text="🥤 «Литвин»", callback_data="sponsor:Литвин"), InlineKeyboardButton(text="💎 «Самосвет»", callback_data="sponsor:Самосвет")],
         [InlineKeyboardButton(text="🍺 «Жигули»", callback_data="sponsor:Жигули"), InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
     ])
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer("💰 **Рекламные контракты**", reply_markup=kb, parse_mode="Markdown")
-    else:
-        await callback.message.edit_text("💰 **Рекламные контракты**", reply_markup=kb, parse_mode="Markdown")
+    try: await callback.message.edit_text("💰 **Рекламные контракты**", reply_markup=kb, parse_mode="Markdown")
+    except: await callback.message.answer("💰 **Рекламные контракты**", reply_markup=kb, parse_mode="Markdown")
  
 @dp.callback_query(F.data.startswith("sponsor:"))
 @with_user_lock
 async def sponsor_sign(callback: CallbackQuery):
     user_id = await get_uid(callback)
     players = await load_data(PLAYERS_FILE)
-    p = players.get(user_id)
+    p = migrate_player_data(players.get(user_id))
     if await deny_if_retired_cb(callback, p): return
     sp = callback.data.split(":")[1]
     players[user_id]["sponsor"] = sp
     await save_data(PLAYERS_FILE, players)
     
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(f"🤝 **Контракт с {sp} подписан!**", parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
-    else:
-        await callback.message.edit_text(f"🤝 **Контракт с {sp} подписан!**", parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
+    try: await callback.message.edit_text(f"🤝 **Контракт с {sp} подписан!**", parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
+    except: await callback.message.answer(f"🤝 **Контракт с {sp} подписан!**", parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
  
 @dp.callback_query(F.data == "menu_donate")
 @with_user_lock
@@ -1056,16 +1027,14 @@ async def donate_menu(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🏘 Города", callback_data="don_dest:city"), InlineKeyboardButton(text="🧒 Детдомы", callback_data="don_dest:kids")],
         [InlineKeyboardButton(text="⚽ Академии", callback_data="don_dest:academy"), InlineKeyboardButton(text="🔙 Отмена", callback_data="back_to_menu")]
     ])
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer("❤️ **Благотворительность**\nКуда направить средства?", reply_markup=kb, parse_mode="Markdown")
-    else:
-        await callback.message.edit_text("❤️ **Благотворительность**\nКуда направить средства?", reply_markup=kb, parse_mode="Markdown")
+    try: await callback.message.edit_text("❤️ **Благотворительность**\nКуда направить средства?", reply_markup=kb, parse_mode="Markdown")
+    except: await callback.message.answer("❤️ **Благотворительность**\nКуда направить средства?", reply_markup=kb, parse_mode="Markdown")
  
 @dp.callback_query(F.data.startswith("don_dest:"))
 async def donate_dest(callback: CallbackQuery, state: FSMContext):
     await state.update_data(dest=callback.data.split(":")[1])
-    await callback.message.edit_text("💵 Введи сумму (в $):")
+    try: await callback.message.edit_text("💵 Введи сумму (в $):")
+    except: await callback.message.answer("💵 Введи сумму (в $):")
     await state.set_state(Donation.waiting_for_amount)
  
 @dp.message(Donation.waiting_for_amount)
@@ -1075,7 +1044,7 @@ async def process_donation(message: Message, state: FSMContext):
     amount = int(message.text)
     user_id = await get_uid(message)
     players = await load_data(PLAYERS_FILE)
-    p = players.get(user_id)
+    p = migrate_player_data(players.get(user_id))
     if await deny_if_retired_msg(message, p): return await state.clear()
     
     if p.get("money", 0) < amount or amount <= 0:
@@ -1099,11 +1068,8 @@ async def leaderboard_handler(callback: CallbackQuery):
     for i, item in enumerate(leaderboard, 1):
         text += f"`{i}.` 👤 **{item['name']}** — Рейтинг: **{item['rating']}** | Трофеев: **{item['trophies']}**\n"
     
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
-    else:
-        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
+    try: await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
+    except: await callback.message.answer(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
  
 # --- ОБРАБОТКА ВЫБОРА КЛУБА ПОСЛЕ СКАНДАЛА ИЛИ УХОДА ---
 @dp.callback_query(F.data.startswith("scandal_club:"))
@@ -1111,7 +1077,7 @@ async def leaderboard_handler(callback: CallbackQuery):
 async def scandal_club_choice_handler(callback: CallbackQuery):
     user_id = await get_uid(callback)
     players = await load_data(PLAYERS_FILE)
-    p = players.get(user_id)
+    p = migrate_player_data(players.get(user_id))
     if await deny_if_retired_cb(callback, p): return
     new_club = callback.data.split(":")[1]
     
@@ -1129,20 +1095,21 @@ async def scandal_club_choice_handler(callback: CallbackQuery):
     players[user_id] = p
     await save_data(PLAYERS_FILE, players)
     
-    await callback.message.delete()
+    try: await callback.message.delete()
+    except: pass
     await callback.message.answer(
         text=f"✍️ Ты успешно перешел в **{new_club}**!\n💵 Твоя новая зарплата: **{p['contract_salary']}$/матч**.\nПора доказывать фанатам свою преданность!",
         parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id)
     )
  
-# --- МАТЧИ И СИМУЛЯЦИЯ МОМЕНТОВ ---
+# --- МАТЧИ, МЕЖДУНАРОДНЫЕ КУБКИ И КОНТРАКТЫ ---
 @dp.callback_query(F.data == "menu_match")
 @with_user_lock
 async def match_handler(callback: CallbackQuery, state: FSMContext):
     user_id = await get_uid(callback)
     await track_activity(user_id)
     players = await load_data(PLAYERS_FILE)
-    p = players.get(user_id)
+    p = migrate_player_data(players.get(user_id))
     if await deny_if_retired_cb(callback, p): return
     
     if p.get("fatigue", 0) >= 95:
@@ -1151,8 +1118,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
     # --- ОБРАБОТКА ТРАВМЫ ---
     if p.get("injury_tours", 0) > 0:
         p["injury_tours"] -= 1
-        if p["injury_tours"] == 0:
-            p["is_injured"] = False
+        if p["injury_tours"] == 0: p["is_injured"] = False
         
         p["tour"] += 1
         p["money"] = p.get("money", 0) + p.get("contract_salary", 1500)
@@ -1179,156 +1145,62 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
                 await simulate_background_division(user_id, parent_div)
                 
         msg = f"🚑 **ТЫ ПРОПУСТИЛ ТУР ИЗ-ЗА ТРАВМЫ**\nКоманда сыграла против **{rival}**. Итог для твоего клуба: **{'Победа' if outcome=='win' else 'Ничья' if outcome=='draw' else 'Поражение'}**.\n"
-        if p["injury_tours"] > 0:
-            msg += f"Осталось лечиться туров: {p['injury_tours']}."
-        else:
-            msg += "✅ **Ты полностью восстановился и готов к следующему матчу!**"
+        if p["injury_tours"] > 0: msg += f"Осталось лечиться туров: {p['injury_tours']}."
+        else: msg += "✅ **Ты полностью восстановился и готов к следующему матчу!**"
             
-        if callback.message.photo:
-            await callback.message.delete()
-            return await callback.message.answer(msg, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
-        else:
-            return await callback.message.edit_text(msg, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
+        try: return await callback.message.edit_text(msg, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
+        except: return await callback.message.answer(msg, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
     
-    # --- СИСТЕМА ДИНАМИЧЕСКИХ ПЕРЕХОДОВ В БУНДЕСЛИГУ ПО РЕЙТИНГУ ---
-    current_rating = p.get("rating", 40)
-    if p["division"] not in ["Бундеслига", "Вторая Бундеслига"] and random.random() < 0.15:
-        if current_rating >= 74:
-            ger_offers = random.sample(CLUBS["Бундеслига"], 2)
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=f"🇩🇪 {c}", callback_data=f"scandal_club:{c}")] for c in ger_offers
-            ] + [[InlineKeyboardButton(text="❌ Отклонить предложение", callback_data="back_to_menu")]])
-            await callback.message.delete()
-            return await callback.message.answer(
-                text=f"📈 **ТРАНСФЕРНОЕ ПРЕДЛОЖЕНИЕ!** Твой высокий рейтинг ({current_rating}) привлек внимание клубов из Германии! Тебе предлагают контракт в **Бундеслиге**:",
-                reply_markup=kb, parse_mode="Markdown"
-            )
-        elif current_rating >= 55:
-            ger_offers = random.sample(CLUBS["Вторая Бундеслига"], 2)
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=f"🇩🇪 {c}", callback_data=f"scandal_club:{c}")] for c in ger_offers
-            ] + [[InlineKeyboardButton(text="❌ Отклонить предложение", callback_data="back_to_menu")]])
-            await callback.message.delete()
-            return await callback.message.answer(
-                text=f"📈 **ТРАНСФЕРНОЕ ПРЕДЛОЖЕНИЕ!** На основе твоего рейтинга ({current_rating}) команды из Германии предлагают тебе контракт во **Второй Бундеслиге**:",
-                reply_markup=kb, parse_mode="Markdown"
-            )
-
-    # --- СБОРНАЯ (ЧМ / ЕВРО / КОПА) ---
+    # 1. МЕЖДУНАРОДНЫЕ ТУРНИРЫ (Перед началом нового сезона, если tour > 15)
     if p["tour"] > 15:
-        if p["rating"] >= 78:
-            is_wc = p["season"] in [1, 4, 8, 12]
-            is_euro_copa = p["season"] in [3, 7, 11]
-            
-            if is_wc or is_euro_copa:
-                if p.get("wc_out") or p.get("wc_stage") == "Победитель":
-                    return await season_results_handler(callback)
-                
-                tourney_name = "ЧЕМПИОНАТ МИРА" if is_wc else "ЕВРО" if p.get("nation", "Россия") in EURO_NATIONS else "КОПА АМЕРИКА"
-                
-                if not p.get("wc_rivals"):
-                    if is_wc: pool = [n for n in NATIONS if n != p.get("nation", "Россия")]
-                    elif tourney_name == "ЕВРО": pool = [n for n in EURO_NATIONS if n != p.get("nation", "Россия")]
-                    else: pool = [n for n in COPA_NATIONS if n != p.get("nation", "Россия")]
-                    
-                    if len(pool) < 3: pool = NATIONS
-                    p["wc_rivals"] = random.sample(pool, 3)
-                    p["wc_stage"] = "Группа 1 матч" if is_wc else "1/8 финала"
-                    p["wc_points"] = 0
-                    p["wc_table"] = [
-                        {"name": p.get("nation", "Россия"), "points": 0, "games": 0},
-                        {"name": p["wc_rivals"][0], "points": 0, "games": 0},
-                        {"name": p["wc_rivals"][1], "points": 0, "games": 0},
-                        {"name": p["wc_rivals"][2], "points": 0, "games": 0}
-                    ]
-                    players[user_id] = p
-                    await save_data(PLAYERS_FILE, players)
-                    
-                curr_stage = p.get("wc_stage", "Группа 1 матч")
-                if curr_stage.startswith("Группа"):
-                    match_idx = int(curr_stage.split()[1]) - 1
-                    rival = p["wc_rivals"][match_idx]
-                else:
-                    if is_wc: pool = [n for n in NATIONS if n != p.get("nation", "Россия") and n not in p.get("wc_rivals", [])]
-                    elif tourney_name == "ЕВРО": pool = [n for n in EURO_NATIONS if n != p.get("nation")]
-                    else: pool = [n for n in COPA_NATIONS if n != p.get("nation")]
-                    rival = random.choice(pool) if pool else random.choice(NATIONS)
-                    
-                match_data = {
-                    "rival": rival, "total_moments": random.randint(1, 4),
-                    "current_moment": 1, "minute": 0, "goals": 0, "assists": 0,
-                    "saves": 0, "tackles": 0, "yellow_cards": 0, "my_team_score": 0, "rival_team_score": 0,
-                    "is_cup": True, "is_national": True, "wc_stage": curr_stage, "log": "", "tourney": tourney_name
-                }
-                title = f"🏆 {tourney_name}: {curr_stage} 🏆"
-                await state.update_data(match=match_data)
-                
-                if callback.message.photo: await callback.message.delete()
-                
-                msg = await callback.message.answer(f"🌐 **{title}**\n⚔️ **{p.get('nation', 'Россия')}** vs **{match_data['rival']}**\nСудья дает свисток!", parse_mode="Markdown")
-                await asyncio.sleep(2)
-                await msg.delete()
-                return await generate_moment(callback, state, user_id)
-            else:
-                played = p.get("nat_played", 0)
-                if played < 2:
-                    p["nat_played"] = played + 1
-                    players[user_id] = p
-                    await save_data(PLAYERS_FILE, players)
-                    
-                    rival_nation = random.choice([n for n in NATIONS if n != p.get("nation", "Россия")])
-                    match_data = {
-                        "rival": rival_nation, "total_moments": random.randint(1, 4),
-                        "current_moment": 1, "minute": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0,
-                        "yellow_cards": 0, "my_team_score": 0, "rival_team_score": 0,
-                        "is_cup": False, "is_national": True, "log": ""
-                    }
-                    await state.update_data(match=match_data)
-                    
-                    if callback.message.photo: await callback.message.delete()
-                    
-                    msg = await callback.message.answer(f"🌐 **🤝 ТОВАРИЩЕСКИЙ МАТЧ СБОРНЫХ**\n⚔️ **{p.get('nation', 'Россия')}** vs **{match_data['rival']}**\nСудья дает свисток!", parse_mode="Markdown")
-                    await asyncio.sleep(2)
-                    await msg.delete()
-                    return await generate_moment(callback, state, user_id)
-                else:
-                    p["nat_played"] = 0
-                    players[user_id] = p
-                    await save_data(PLAYERS_FILE, players)
-                    return await season_results_handler(callback)
-        else:
-            return await season_results_handler(callback)
-    
-    # --- КЛУБНЫЙ МАТЧ ---
+        season = p.get("season", 1)
+        is_wc = season in [4, 8, 12]
+        is_copa = season in [3, 7, 11]
+        
+        if (is_wc or is_copa) and p["rating"] >= 75:
+            # Если еще не вылетел и не выиграл
+            if p.get("wc_stage") not in ["Вылет", "Победитель"]:
+                cup_name = "ЧЕМПИОНАТ МИРА" if is_wc else "ЕВРО" if p.get("nation") in EURO_NATIONS else "КОПА АМЕРИКА"
+                return await process_international_cup(callback, state, p, user_id, players, cup_name)
+
+        # 2. КОНЕЦ СЕЗОНА: ПРЕДЛОЖЕНИЯ (5 ячеек)
+        all_clubs = []
+        for l in CLUBS.values(): all_clubs.extend(l)
+        
+        # Подбираем предложения в диапазоне +/- 10 рейтинга из ЛЮБЫХ лиг
+        possible_clubs = [c for c in all_clubs if abs(CLUB_RATINGS.get(c, 50) - p["rating"]) <= 10 and c != p["club"]]
+        if len(possible_clubs) < 4: possible_clubs = random.sample(all_clubs, 4)
+        offers = random.sample(possible_clubs, 4)
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"🤝 Продлить ({p['club']})", callback_data=f"transfer:{p['club']}")],
+            [InlineKeyboardButton(text=f"✈️ {offers[0]}", callback_data=f"transfer:{offers[0]}")],
+            [InlineKeyboardButton(text=f"✈️ {offers[1]}", callback_data=f"transfer:{offers[1]}")],
+            [InlineKeyboardButton(text=f"✈️ {offers[2]}", callback_data=f"transfer:{offers[2]}")],
+            [InlineKeyboardButton(text=f"✈️ {offers[3]}", callback_data=f"transfer:{offers[3]}")]
+        ])
+        
+        try: await callback.message.edit_text("🏁 **СЕЗОН ЗАВЕРШЕН!**\nТебе поступили предложения. Выбери клуб для продолжения карьеры:", reply_markup=kb, parse_mode="Markdown")
+        except: await callback.message.answer("🏁 **СЕЗОН ЗАВЕРШЕН!**\nТебе поступили предложения. Выбери клуб для продолжения карьеры:", reply_markup=kb)
+        return
+
+    # 3. КЛУБНЫЙ МАТЧ И ПРОВЕРКА ДОВЕРИЯ (РЕЗЕРВ/БАНКА)
+    if p["trust"] <= 20:
+        # Глубокий резерв - скипаем матч
+        p["tour"] += 1
+        p["train_done"] = False
+        p["fatigue"] = max(0, p.get("fatigue", 0) - 10)
+        players[user_id] = p
+        await save_data(PLAYERS_FILE, players)
+        
+        msg = "❌ **Матч пропущен!**\nТренер оставил тебя в глубоком резерве. Тренируйся, чтобы повысить доверие и пробиться в состав."
+        try: return await callback.message.edit_text(msg, reply_markup=await main_menu_keyboard(callback.from_user.username, user_id), parse_mode="Markdown")
+        except: return await callback.message.answer(msg, reply_markup=await main_menu_keyboard(callback.from_user.username, user_id), parse_mode="Markdown")
+
     event_str, p = check_random_events(p)
     players[user_id] = p
     await save_data(PLAYERS_FILE, players)
 
-    if random.random() < 0.01:
-        div_clubs = [c for c in CLUBS[p["division"]] if c != p["club"]]
-        available_clubs = random.sample(div_clubs, min(len(div_clubs), 2))
-        
-        top_leagues = ["РПЛ", "Лига 1", "АПЛ", "Ла Лига", "Серия А", "Бундеслига"]
-        my_top_league = "РПЛ"
-        if p["division"] in ["Насьональ", "Лига 2", "Лига 1"]: my_top_league = "Лига 1"
-        elif p["division"] in ["Первая лига Англии", "Чемпионшип", "АПЛ"]: my_top_league = "АПЛ"
-        elif p["division"] in ["Сегунда", "Ла Лига"]: my_top_league = "Ла Лига"
-        elif p["division"] in ["Серия Б", "Серия А"]: my_top_league = "Серия А"
-        elif p["division"] in ["Вторая Бундеслига", "Бундеслига"]: my_top_league = "Бундеслига"
-        
-        alt_leagues = [l for l in top_leagues if l != my_top_league]
-        alt_league = random.choice(alt_leagues) if alt_leagues else "РПЛ"
-        available_clubs.append(random.choice(CLUBS[alt_league]))
-        random.shuffle(available_clubs)
-        
-        kb = InlineKeyboardMarkup(inline_keyboard=[[[InlineKeyboardButton(text=f"🏢 {club}", callback_data=f"scandal_club:{club}")] for club in available_clubs]])
-        
-        await callback.message.delete()
-        return await callback.message.answer(
-            text=f"🤬 **СКАНДАЛ С РУКОВОДСТВОМ!** Твой контракт с {p['club']} разорван.\nИнтерес к тебе проявили клубы. Выбери новую команду:",
-            reply_markup=kb, parse_mode="Markdown"
-        )
-        
     p["stats_season"]["games"] += 1
     p["fatigue"] = min(100, p.get("fatigue", 0) + 15)
     
@@ -1345,18 +1217,15 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
         elif p["division"] in ["Вторая Бундеслига", "Бундеслига"]: country_leagues = ["Вторая Бундеслига", "Бундеслига"]
         
         rival_pool = []
-        for l in country_leagues:
-            rival_pool.extend(CLUBS[l])
+        for l in country_leagues: rival_pool.extend(CLUBS[l])
             
         played_cup_rivals = p.get("cup_rivals", [])
         rival_pool = [c for c in rival_pool if c != p["club"] and c not in played_cup_rivals]
         
-        if not rival_pool:
-            rival_pool = ["Случайная команда"]
+        if not rival_pool: rival_pool = ["Случайная команда"]
     else:
         played_rivals = p.get("played_league_rivals", [])
         rival_pool = [c for c in CLUBS[p["division"]] if c != p["club"] and c not in played_rivals]
-        
         if not rival_pool: 
             rival_pool = [c for c in CLUBS[p["division"]] if c != p["club"]]
             p["played_league_rivals"] = []
@@ -1366,36 +1235,108 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
         
     match_data = {
         "rival": random.choice(rival_pool),
-        "total_moments": random.randint(1, 4),
+        "total_moments": random.randint(2, 4),
         "current_moment": 1,
         "minute": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0, "yellow_cards": 0,
         "my_team_score": 0, "rival_team_score": 0,
         "is_cup": is_cup_match, "cup_stage": cup_stg if is_cup_match else None,
         "is_national": False, "log": ""
     }
+    
+    # Банка (замена)
+    if 21 <= p["trust"] <= 50:
+        match_data["minute"] = random.randint(60, 75)
+        match_data["total_moments"] = random.randint(1, 2)
+        match_data["log"] += f"🔄 **{match_data['minute']}'** | Тренер выпускает тебя на замену!\n"
+
     await state.update_data(match=match_data)
     
     match_title = f"🏆 НАЦИОНАЛЬНЫЙ КУБОК ({cup_stg}) 🏆" if is_cup_match else f"🏟️ РЕГУЛЯРНЫЙ ЧЕМПИОНАТ ({p['division']})"
     intro_text = f"{event_str}\n\n" if event_str else ""
     
-    if callback.message.photo: await callback.message.delete()
+    try: await callback.message.delete()
+    except: pass
     
-    msg = await callback.message.answer(f"{intro_text}⚽ **{match_title}**\n⚔️ **{p['club']}** vs **{match_data['rival']}**\nСудья дает свисток к началу игры!", parse_mode="Markdown")
+    msg = await callback.message.answer(f"{intro_text}⚽ **{match_title}**\n⚔️ **{p['club']}** vs **{match_data['rival']}**\nСудья дает свисток!", parse_mode="Markdown")
     await asyncio.sleep(2)
-    await msg.delete()
+    try: await msg.delete()
+    except: pass
     await generate_moment(callback, state, user_id)
- 
+
+@dp.callback_query(F.data.startswith("transfer:"))
+@with_user_lock
+async def process_transfer(callback: CallbackQuery, state: FSMContext):
+    user_id = await get_uid(callback)
+    players = await load_data(PLAYERS_FILE)
+    p = players.get(user_id)
+    
+    new_club = callback.data.split(":")[1]
+    is_extension = (new_club == p["club"])
+    
+    p["club"] = new_club
+    p["division"] = get_division(new_club)
+    p["trust"] = 50 if is_extension else 30
+    p["contract_salary"] = int(calculate_player_value(p["rating"], p["division"]) * 0.005) # ЗП зависит от стоимости
+    if p["contract_salary"] < 1500: p["contract_salary"] = 1500
+    
+    p["season"] += 1
+    p["tour"] = 1
+    p["age"] += 1
+    p["wc_stage"] = "Группа 1"
+    p["cup_out"] = False
+    p["cup_stage"] = "1/16"
+    p["stats_season"] = {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0}
+    
+    if p["season"] > 13:
+        p["retired"] = True
+        players[user_id] = p
+        await save_data(PLAYERS_FILE, players)
+        msg = "🏁 **Карьера завершена!** Ты провел 13 сезонов."
+        try: return await callback.message.edit_text(msg, reply_markup=retired_keyboard(), parse_mode="Markdown")
+        except: return await callback.message.answer(msg, reply_markup=retired_keyboard(), parse_mode="Markdown")
+        
+    players[user_id] = p
+    await save_data(PLAYERS_FILE, players)
+    
+    msg = f"✍️ **КОНТРАКТ ПОДПИСАН!**\nКлуб: **{new_club}**.\nНачинается сезон {p['season']}! Твоя ЗП: {p['contract_salary']}$/матч."
+    try: await callback.message.edit_text(msg, reply_markup=await main_menu_keyboard(callback.from_user.username, user_id), parse_mode="Markdown")
+    except: await callback.message.answer(msg, reply_markup=await main_menu_keyboard(callback.from_user.username, user_id), parse_mode="Markdown")
+
+# --- СИМУЛЯТОР СБОРНЫХ ---
+async def process_international_cup(callback, state, p, user_id, players, cup_name):
+    # Строгая турнирная сетка без зацикливаний
+    stages = ["Группа 1", "Группа 2", "Группа 3", "1/8 Финала", "1/4 Финала", "Полуфинал", "Финал"]
+    curr = p.get("wc_stage", "Группа 1")
+    
+    if curr in ["Вылет", "Победитель"]: 
+        p["wc_stage"] = "Группа 1"
+        return await match_handler(callback, state) 
+
+    rival = random.choice([n for n in NATIONS if n != p.get("nation", "Россия")])
+    match_data = {
+        "rival": rival, "total_moments": random.randint(2, 4), "current_moment": 1,
+        "minute": 0, "goals": 0, "assists": 0, "my_team_score": 0, "rival_team_score": 0, 
+        "saves": 0, "tackles": 0, "yellow_cards": 0,
+        "log": "", "is_int_cup": True, "stage": curr, "cup_name": cup_name
+    }
+    
+    await state.update_data(match=match_data)
+    text = f"🏆 **{cup_name}: {curr}**\n⚔️ **{p.get('nation', 'Россия')}** vs **{rival}**\nСудья дает свисток!"
+    try: await callback.message.edit_text(text, parse_mode="Markdown")
+    except: await callback.message.answer(text, parse_mode="Markdown")
+    await asyncio.sleep(2)
+    await generate_moment(callback, state, user_id)
+
 async def generate_moment(callback: CallbackQuery, state: FSMContext, user_id: str):
     data = await state.get_data()
-    if "match" not in data:
-        return
+    if "match" not in data: return
     m = data["match"]
-    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
  
     m["minute"] += random.randint(15, 25)
     if m["minute"] > 90: m["minute"] = 90
     
-    is_nat = m.get("is_national", False)
+    is_nat = m.get("is_int_cup", False)
     my_name = p.get("nation", "Россия") if is_nat else p["club"]
     
     my_rating = NATION_RATINGS.get(my_name, 75) if is_nat else CLUB_RATINGS.get(p["club"], 50)
@@ -1416,95 +1357,63 @@ async def generate_moment(callback: CallbackQuery, state: FSMContext, user_id: s
 
     if random.random() < 0.4:
         flavor = random.choice([
-            "🔥 Красивый финт в центре поля обостряет игру.", 
-            "📐 Подача углового, но защита выносит мяч.", 
-            "🟨 Судья показывает желтую карточку игроку соперника.",
-            "⚔️ Жесткий стык, но судья не дает свисток.",
-            "👐 Вратарь уверенно забирает мяч после навеса."
+            "🔥 Красивый финт в центре поля обостряет игру.", "📐 Подача углового, но защита выносит мяч.", 
+            "🟨 Судья показывает желтую карточку игроку соперника.", "⚔️ Жесткий стык, но судья не дает свисток."
         ])
         m["log"] += f"⏱ **{m['minute']}'** | {flavor}\n"
-
-    if random.random() < 0.08:
-        card_roll = random.random()
-        if card_roll < 0.15:
-            m["log"] += f"🟥 **{m['minute']}'** | ПРЯМАЯ КРАСНАЯ! Грубейший фол, ты удален с поля!\n"
-            m["minute"] = 90
-        else:
-            m["log"] += f"🟨 **{m['minute']}'** | Судья показывает тебе желтую карточку за срыв атаки.\n"
-            m["yellow_cards"] = m.get("yellow_cards", 0) + 1
-            if m["yellow_cards"] >= 2:
-                m["log"] += f"🟥 **{m['minute']}'** | ВТОРАЯ ЖЕЛТАЯ! ТЕБЯ УДАЛЯЮТ С ПОЛЯ!\n"
-                m["minute"] = 90
  
     if m["current_moment"] > m["total_moments"] or m["minute"] == 90:
         is_knockout = False
-        if m["is_cup"]:
-            if m.get("is_national"):
-                is_knockout = not m.get("wc_stage", "").startswith("Группа")
-            else:
-                is_knockout = True
+        if m.get("is_cup"): is_knockout = True
+        if m.get("is_int_cup") and not m.get("stage", "").startswith("Группа"): is_knockout = True
                 
-        if is_knockout and m["my_team_score"] == m["rival_team_score"]:
-            await start_penalty_shootout(callback, state, user_id)
-        else:
-            await finish_match(callback, state, user_id)
-        return
+        if is_knockout and m["my_team_score"] == m["rival_team_score"]: return await start_penalty_shootout(callback, state, user_id)
+        else: return await finish_match(callback, state, user_id)
         
     text = (f"⏱ **{m['minute']}' МИНУТА** | Момент {m['current_moment']}/{m['total_moments']}\n"
             f"⚔️ **{my_name}** vs **{m['rival']}**\n"
             f"Счет: **{m['my_team_score']} : {m['rival_team_score']}**\n\n"
-            f"📝 **События матча:**\n{m['log'] if m['log'] else 'Идет плотная позиционная борьба...\n'}\n")
+            f"📝 **События:**\n{m['log'] if m['log'] else 'Плотная позиционная борьба...\n'}\n")
     
     m["log"] = "" 
     
     if p["position"] == "GK":
         text += "🚨 **Опасность! Нападающий соперника выходит один на один с тобой! Твои действия?**"
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🧤 Прыгнуть в левый угол", callback_data="gk_act:left"), InlineKeyboardButton(text="🧤 Прыгнуть в правый угол", callback_data="gk_act:right")],
+            [InlineKeyboardButton(text="🧤 Прыгнуть влево", callback_data="gk_act:left"), InlineKeyboardButton(text="🧤 Прыгнуть вправо", callback_data="gk_act:right")],
             [InlineKeyboardButton(text="🏃 Сблизить дистанцию", callback_data="gk_act:rush")]
         ])
     elif p["position"] == "CB":
-        if random.random() < 0.75:
-            text += "🛡️ **Форвард соперника идет на дриблинге прямо в твою зону!**"
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🧲 Жесткий подкат", callback_data="cb_act:tackle_hard"), InlineKeyboardButton(text="🕴️ Встретить корпусом", callback_data="cb_act:tackle_smart")],
-                [InlineKeyboardButton(text="📐 Отдать пас ближнему", callback_data="act:pass")]
-            ])
-        else:
-            text += "🔥 **Ты подключился на угловой! Мяч летит к тебе!**"
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🎯 Пробить головой", callback_data="act:shoot_menu"), InlineKeyboardButton(text="📐 Сбросить под удар партнеру", callback_data="act:pass")]
-            ])
-    else:
-        text += "🔥 **Ты контролируешь мяч на подступах к штрафной! Твое решение?**"
+        text += "🛡️ **Форвард соперника идет на дриблинге прямо в твою зону!**"
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🎯 Пробить по воротам", callback_data="act:shoot_menu"), InlineKeyboardButton(text="📐 Отдать пас", callback_data="act:pass")]
+            [InlineKeyboardButton(text="🧲 Жесткий подкат", callback_data="cb_act:tackle_hard"), InlineKeyboardButton(text="🕴️ Встретить корпусом", callback_data="cb_act:tackle_smart")],
+            [InlineKeyboardButton(text="📐 Пас", callback_data="act:pass")]
+        ])
+    else:
+        text += "🔥 **Ты контролируешь мяч в атаке! Твое решение?**"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎯 Пробить", callback_data="act:shoot_menu"), InlineKeyboardButton(text="📐 Отдать пас", callback_data="act:pass")]
         ])
         
     await state.update_data(match=m)
-    
-    try:
-        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
-    except:
-        await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    try: await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except: await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
  
 @dp.callback_query(F.data.startswith("gk_act:"))
 @with_user_lock
 async def gk_action_handler(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    if "match" not in data:
-        return await callback.answer("⏳ Матч уже завершен!", show_alert=True)
+    if "match" not in data: return await callback.answer("⏳ Матч завершен!", show_alert=True)
     m = data["match"]
     action = callback.data.split(":")[1]
     user_id = await get_uid(callback)
-    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
     
-    rival_rating = NATION_RATINGS.get(m["rival"], 75) if m.get("is_national") else CLUB_RATINGS.get(m["rival"], 50)
-    save_chance = 0.30 + ((p["rating"] - rival_rating) * 0.015) + (p["rating"] * 0.004)
+    rival_rating = NATION_RATINGS.get(m["rival"], 75) if m.get("is_int_cup") else CLUB_RATINGS.get(m["rival"], 50)
+    save_chance = 0.35 + ((p["rating"] - rival_rating) * 0.015) + (p["rating"] * 0.004) # Чуть повысил шансы
     save_chance = max(0.1, min(0.95, save_chance))
     
     opp_shoot_dir = random.choice(["left", "right", "center"])
-    
     is_saved = False
     if action == "rush":
         if random.random() < (save_chance + 0.1): is_saved = True
@@ -1516,7 +1425,7 @@ async def gk_action_handler(callback: CallbackQuery, state: FSMContext):
         m["log"] += f"🧤 **{m['minute']}'** | БЕЗУМНЫЙ СЕЙВ! Ты вытаскиваешь мертвейший мяч!\n"
     else:
         m["rival_team_score"] += 1
-        m["log"] += f"⚡ **{m['minute']}'** | Гол... Оппонент технично переиграл тебя на противоходе.\n"
+        m["log"] += f"⚡ **{m['minute']}'** | Гол... Оппонент технично переиграл тебя.\n"
         
     m["current_moment"] += 1
     await state.update_data(match=m)
@@ -1526,31 +1435,30 @@ async def gk_action_handler(callback: CallbackQuery, state: FSMContext):
 @with_user_lock
 async def cb_action_handler(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    if "match" not in data:
-        return await callback.answer("⏳ Матч уже завершен!", show_alert=True)
+    if "match" not in data: return await callback.answer("⏳ Матч завершен!", show_alert=True)
     m = data["match"]
     action = callback.data.split(":")[1]
     user_id = await get_uid(callback)
-    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
     
-    rival_rating = NATION_RATINGS.get(m["rival"], 75) if m.get("is_national") else CLUB_RATINGS.get(m["rival"], 50)
-    tackle_chance = 0.30 + ((p["rating"] - rival_rating) * 0.015) + (p["rating"] * 0.003)
+    rival_rating = NATION_RATINGS.get(m["rival"], 75) if m.get("is_int_cup") else CLUB_RATINGS.get(m["rival"], 50)
+    tackle_chance = 0.35 + ((p["rating"] - rival_rating) * 0.015) + (p["rating"] * 0.003)
     tackle_chance = max(0.1, min(0.90, tackle_chance))
     
     if action == "tackle_hard":
         if random.random() < 0.15:
             m["rival_team_score"] += 1
-            m["log"] += f"⚡ **{m['minute']}'** | Фол в штрафной! Ты сфолил, соперник забивает пенальти.\n"
+            m["log"] += f"⚡ **{m['minute']}'** | Фол в штрафной! Соперник забивает пенальти.\n"
         elif random.random() < tackle_chance:
             m["tackles"] += 1
-            m["log"] += f"🛡️ **{m['minute']}'** | Мощнейший чистый подкат! Форвард лежит, мяч отобран!\n"
+            m["log"] += f"🛡️ **{m['minute']}'** | Чистый подкат! Мяч отобран!\n"
         else:
             m["rival_team_score"] += 1
-            m["log"] += f"⚡ **{m['minute']}'** | Ошибка! Нападающий пробросил мяч мимо тебя и забил.\n"
+            m["log"] += f"⚡ **{m['minute']}'** | Ошибка! Нападающий прошел и забил.\n"
     else:
         if random.random() < tackle_chance:
             m["tackles"] += 1
-            m["log"] += f"🛡️ **{m['minute']}'** | Отличный выбор позиции. Ты заблокировал продвижение соперника.\n"
+            m["log"] += f"🛡️ **{m['minute']}'** | Ты заблокировал продвижение соперника.\n"
         else:
             m["rival_team_score"] += 1
             m["log"] += f"⚡ **{m['minute']}'** | Тебя легко обыграли на замахе. Гол.\n"
@@ -1562,46 +1470,30 @@ async def cb_action_handler(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "act:shoot_menu")
 async def act_shoot_menu_handler(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📐 Левый верхний (Девятка)", callback_data="shoot_dir:в левую девятку"), InlineKeyboardButton(text="📐 Правый верхний (Девятка)", callback_data="shoot_dir:в правую девятку")],
-        [InlineKeyboardButton(text="👇 Левый нижний", callback_data="shoot_dir:низом в левый угол"), InlineKeyboardButton(text="👇 Правый нижний", callback_data="shoot_dir:низом в правый угол")]
+        [InlineKeyboardButton(text="📐 В девятку", callback_data="shoot_dir:в девятку"), InlineKeyboardButton(text="👇 Низом в угол", callback_data="shoot_dir:низом в угол")]
     ])
-    await callback.message.edit_reply_markup(reply_markup=kb)
+    try: await callback.message.edit_reply_markup(reply_markup=kb)
+    except: pass
  
 @dp.callback_query(F.data.startswith("shoot_dir:"))
 @with_user_lock
 async def act_shoot_execute_handler(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    if "match" not in data:
-        return await callback.answer("⏳ Матч уже завершен!", show_alert=True)
+    if "match" not in data: return await callback.answer("⏳ Матч завершен!", show_alert=True)
     m = data["match"]
     target_dir = callback.data.split(":")[1]
     user_id = await get_uid(callback)
-    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
     
-    rival_rating = NATION_RATINGS.get(m["rival"], 75) if m.get("is_national") else CLUB_RATINGS.get(m["rival"], 50)
-    score_chance = 0.20 + ((p["rating"] - rival_rating) * 0.015)
-    
-    gk_dive = random.choice(["в левую девятку", "в правую девятку", "низом в левый угол", "низом в правый угол"])
-    
-    if gk_dive == target_dir:
-        score_chance -= 0.25
-        gk_guessed = True
-    else:
-        score_chance += 0.10
-        gk_guessed = False
-        
-    score_chance = max(0.05, min(0.92, score_chance))
+    rival_rating = NATION_RATINGS.get(m["rival"], 75) if m.get("is_int_cup") else CLUB_RATINGS.get(m["rival"], 50)
+    score_chance = 0.35 + ((p["rating"] - rival_rating) * 0.015) # БАФНУТО НА +15%
+    score_chance = max(0.1, min(0.95, score_chance))
     
     if random.random() < score_chance:
         m["goals"] += 1; m["my_team_score"] += 1
-        await callback.message.delete()
-        tmp_msg = await callback.message.answer(text=f"⚽ **{m['minute']}'** | ГОЛ! Твой шикарный удар {target_dir} разрывает сетку ворот!", parse_mode="Markdown")
-        await asyncio.sleep(2)
-        await tmp_msg.delete()
-        m["log"] += f"⚽ **{m['minute']}'** | ГОЛ! Твой шикарный удар!\n"
+        m["log"] += f"⚽ **{m['minute']}'** | ГОЛ! Твой шикарный удар {target_dir} разрывает сетку!\n"
     else:
-        if gk_guessed: m["log"] += f"❌ **{m['minute']}'** | Ты пробил {target_dir}, но голкипер парировал твой удар!\n"
-        else: m["log"] += f"❌ **{m['minute']}'** | Целился {target_dir}, но мяч пролетел мимо (не хватило техники)!\n"
+        m["log"] += f"❌ **{m['minute']}'** | Ты пробил {target_dir}, но голкипер парировал твой удар!\n"
             
     m["current_moment"] += 1
     await state.update_data(match=m)
@@ -1611,151 +1503,84 @@ async def act_shoot_execute_handler(callback: CallbackQuery, state: FSMContext):
 @with_user_lock
 async def act_pass_handler(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    if "match" not in data:
-        return await callback.answer("⏳ Матч уже завершен!", show_alert=True)
+    if "match" not in data: return await callback.answer("⏳ Матч завершен!", show_alert=True)
     m = data["match"]
     user_id = await get_uid(callback)
-    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    p = migrate_player_data((await load_data(PLAYERS_FILE)).get(user_id))
     
-    rival_rating = NATION_RATINGS.get(m["rival"], 75) if m.get("is_national") else CLUB_RATINGS.get(m["rival"], 50)
-    pass_chance = 0.25 + ((p["rating"] - rival_rating) * 0.01) + (p["rating"] * 0.003)
-    pass_chance = max(0.1, min(0.85, pass_chance))
+    rival_rating = NATION_RATINGS.get(m["rival"], 75) if m.get("is_int_cup") else CLUB_RATINGS.get(m["rival"], 50)
+    pass_chance = 0.40 + ((p["rating"] - rival_rating) * 0.01) + (p["rating"] * 0.003) # БАФНУТО НА +15%
+    pass_chance = max(0.1, min(0.95, pass_chance))
     
     if random.random() < pass_chance:
         m["assists"] += 1; m["my_team_score"] += 1
-        await callback.message.delete()
-        tmp_msg = await callback.message.answer(text=f"🅰️ **{m['minute']}'** | Роскошный проникающий пас! Партнер замыкает передачу в касание!", parse_mode="Markdown")
-        await asyncio.sleep(2)
-        await tmp_msg.delete()
-        m["log"] += f"🅰️ **{m['minute']}'** | Твой роскошный голевой пас!\n"
+        m["log"] += f"🅰️ **{m['minute']}'** | Роскошный проникающий пас! Партнер замыкает!\n"
     else:
         m["log"] += f"❌ **{m['minute']}'** | Твой пас оказался неточным или был перехвачен.\n"
         
     m["current_moment"] += 1
     await state.update_data(match=m)
     await generate_moment(callback, state, user_id)
- 
+
 async def start_penalty_shootout(callback: CallbackQuery, state: FSMContext, user_id: str):
     data = await state.get_data()
-    if "match" not in data:
-        return
     m = data["match"]
-    m["my_pen_score"] = 0
-    m["rival_pen_score"] = 0
-    m["pen_round"] = 1
+    m["my_pen_score"], m["rival_pen_score"], m["pen_round"] = 0, 0, 1
     await state.update_data(match=m)
-    
-    try:
-        await callback.message.edit_text("⏱ **Основное время завершилось вничью!**\n🏆 Начинается **Серия Послематчевых Пенальти**!", parse_mode="Markdown")
-    except:
-        await callback.message.answer("⏱ **Основное время завершилось вничью!**\n🏆 Начинается **Серия Послематчевых Пенальти**!", parse_mode="Markdown")
-        
+    try: await callback.message.edit_text("⏱ **Ничья!**\n🏆 Начинается Серия Пенальти!", parse_mode="Markdown")
+    except: await callback.message.answer("⏱ **Ничья!**\n🏆 Начинается Серия Пенальти!", parse_mode="Markdown")
     await asyncio.sleep(2)
     await next_penalty_kick(callback, state, user_id)
  
 async def next_penalty_kick(callback: CallbackQuery, state: FSMContext, user_id: str):
-    data = await state.get_data()
-    if "match" not in data:
-        return
-    m = data["match"]
-    
+    m = (await state.get_data())["match"]
     if m["pen_round"] > 5 and m["my_pen_score"] != m["rival_pen_score"]:
-        await finish_cup_match(callback, state, user_id)
-        return
+        status = "\n🎉 ПОБЕДА ПО ПЕНАЛЬТИ!" if m["my_pen_score"] > m["rival_pen_score"] else "\n❌ Поражение по пенальти."
+        if m["my_pen_score"] > m["rival_pen_score"]: m["my_team_score"] += 1
+        else: m["rival_team_score"] += 1
+        return await finish_match(callback, state, user_id, cup_status=status)
  
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎯 Налево", callback_data="pen_dir:left"), InlineKeyboardButton(text="🎯 По центру", callback_data="pen_dir:center"), InlineKeyboardButton(text="🎯 Направо", callback_data="pen_dir:right")]
-    ])
-    
-    try:
-        await callback.message.edit_text(
-            f"🥅 **СЕРИЯ ПЕНАЛЬТИ — Раунд {m['pen_round']}**\n"
-            f"Счет по пенальти: **{m['my_pen_score']} : {m['rival_pen_score']}**\n\n"
-            f"Выбирай направление для своего удара/сейва:", reply_markup=kb
-        )
-    except:
-        await callback.message.answer(
-            f"🥅 **СЕРИЯ ПЕНАЛЬТИ — Раунд {m['pen_round']}**\n"
-            f"Счет по пенальти: **{m['my_pen_score']} : {m['rival_pen_score']}**\n\n"
-            f"Выбирай направление для своего удара/сейва:", reply_markup=kb
-        )
- 
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🎯 Налево", callback_data="pen_dir:left"), InlineKeyboardButton(text="🎯 По центру", callback_data="pen_dir:center"), InlineKeyboardButton(text="🎯 Направо", callback_data="pen_dir:right")]])
+    text = f"🥅 **ПЕНАЛЬТИ — Раунд {m['pen_round']}**\nСчет: **{m['my_pen_score']} : {m['rival_pen_score']}**\nБей/Тащи:"
+    try: await callback.message.edit_text(text, reply_markup=kb)
+    except: await callback.message.answer(text, reply_markup=kb)
+
 @dp.callback_query(F.data.startswith("pen_dir:"))
 @with_user_lock
 async def execute_penalty_kick(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    if "match" not in data:
-        return await callback.answer("⏳ Матч уже завершен!", show_alert=True)
-    m = data["match"]
-    user_id = await get_uid(callback)
+    m = (await state.get_data())["match"]
     choice = callback.data.split(":")[1]
     
-    gk_action = random.choice(["left", "center", "right"])
-    if choice != gk_action:
-        m["my_pen_score"] += 1
-        my_res = "✅ Ты забил пенальти!"
-    else:
-        my_res = "❌ Твой удар парировал вратарь!"
+    if choice != random.choice(["left", "center", "right"]):
+        m["my_pen_score"] += 1; my_res = "✅ Ты забил пенальти!"
+    else: my_res = "❌ Вратарь потащил!"
         
-    rival_choice = random.choice(["left", "center", "right"])
-    my_gk_dive = random.choice(["left", "center", "right"])
-    
-    if rival_choice != my_gk_dive:
-        m["rival_pen_score"] += 1
-        rival_res = "⚽ Соперник забивает точным ударом."
-    else:
-        rival_res = "🧤 ТЫ ОТРАЗИЛ ПЕНАЛЬТИ СОПЕРНИКА!"
+    if random.choice(["left", "center", "right"]) != random.choice(["left", "center", "right"]):
+        m["rival_pen_score"] += 1; rival_res = "⚽ Соперник забил."
+    else: rival_res = "🧤 ТЫ ОТРАЗИЛ УДАР!"
         
     m["pen_round"] += 1
     m["log"] = f"{my_res}\n{rival_res}"
     await state.update_data(match=m)
     
-    try:
-        await callback.message.edit_text(f"📊 **Итоги раунда:**\n{m['log']}")
-    except:
-        await callback.message.answer(f"📊 **Итоги раунда:**\n{m['log']}")
-        
+    try: await callback.message.edit_text(f"📊 **Итог:**\n{m['log']}")
+    except: await callback.message.answer(f"📊 **Итог:**\n{m['log']}")
     await asyncio.sleep(2)
-    await next_penalty_kick(callback, state, user_id)
+    await next_penalty_kick(callback, state, callback.from_user.id) # ID passthrough
  
-async def finish_cup_match(callback: CallbackQuery, state: FSMContext, user_id: str):
-    data = await state.get_data()
-    if "match" not in data:
-        return
-    m = data["match"]
-    is_win = m["my_pen_score"] > m["rival_pen_score"]
-    
-    if is_win:
-        m["my_team_score"] += 1 
-        status_text = "\n🎉 ПОБЕДА ПО ПЕНАЛЬТИ! Вы проходите дальше!"
-    else:
-        m["rival_team_score"] += 1
-        status_text = "\n❌ Поражение по пенальти. Команда вылетает."
-        
-    await state.update_data(match=m)
-    await finish_match(callback, state, user_id, cup_status=status_text)
-
-# --- ЗАВЕРШЕНИЕ МАТЧА И ИНТЕРВЬЮ ---
 async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str, cup_status: str = ""):
     data = await state.get_data()
     m = data.get("match")
     players = await load_data(PLAYERS_FILE)
-    p = players.get(user_id)
+    p = migrate_player_data(players.get(user_id))
     
-    if not p or not m:
-        return await callback.answer("Ошибка данных матча.", show_alert=True)
-        
     my_score = m.get("my_team_score", 0)
     rival_score = m.get("rival_team_score", 0)
     
-    # Обновляем статистику
-    p["stats_season"]["goals"] = p["stats_season"].get("goals", 0) + m.get("goals", 0)
-    p["stats_season"]["assists"] = p["stats_season"].get("assists", 0) + m.get("assists", 0)
-    p["stats_season"]["saves"] = p["stats_season"].get("saves", 0) + m.get("saves", 0)
-    p["stats_season"]["tackles"] = p["stats_season"].get("tackles", 0) + m.get("tackles", 0)
-    
-    if "stats_total" not in p:
-        p["stats_total"] = {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0}
+    p["stats_season"]["goals"] += m.get("goals", 0)
+    p["stats_season"]["assists"] += m.get("assists", 0)
+    p["stats_season"]["saves"] += m.get("saves", 0)
+    p["stats_season"]["tackles"] += m.get("tackles", 0)
     
     p["stats_total"]["games"] += 1
     p["stats_total"]["goals"] += m.get("goals", 0)
@@ -1774,115 +1599,72 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
         p["mood"] = max(0, p.get("mood", 100) - 10)
     else:
         p["trust"] = min(100, p["trust"] + random.randint(1, 5))
-        
-    p["money"] = p.get("money", 0) + p.get("contract_salary", 1500)
-    p["tour"] += 1
-    p["train_done"] = False
+
+    status = cup_status
     
-    # Логика кубков и турниров
-    if m.get("is_cup") and not m.get("is_national"):
-        if outcome == "loss":
-            p["cup_out"] = True
+    # Сетка Сборных
+    if m.get("is_int_cup"):
+        stages = ["Группа 1", "Группа 2", "Группа 3", "1/8 Финала", "1/4 Финала", "Полуфинал", "Финал"]
+        idx = stages.index(m["stage"]) if m["stage"] in stages else 0
+        
+        if "Группа" in m["stage"]:
+            if idx + 1 < len(stages):
+                p["wc_stage"] = stages[idx + 1]
+                status += f"\n🌐 **{m['cup_name']}:** Переход в {p['wc_stage']}"
         else:
-            stages = CUP_STAGES
-            curr_idx = stages.index(p["cup_stage"]) if p["cup_stage"] in stages else 0
-            if curr_idx < len(stages) - 1:
-                p["cup_stage"] = stages[curr_idx + 1]
+            if outcome == "loss": 
+                p["wc_stage"] = "Вылет"
+                status += f"\n🌐 **{m['cup_name']}:** Вы вылетели с турнира."
             else:
-                if "trophies" not in p: p["trophies"] = []
-                p["trophies"].append("Национальный Кубок")
+                if m["stage"] == "Финал":
+                    p["wc_stage"] = "Победитель"
+                    status += f"\n🏆 **{m['cup_name']}:** ТЫ ВЫИГРАЛ ТУРНИР!"
+                else:
+                    if idx + 1 < len(stages):
+                        p["wc_stage"] = stages[idx + 1]
+                        status += f"\n🌐 **{m['cup_name']}:** Проход в {p['wc_stage']}"
+        p["train_done"] = False
+    else:
+        # Логика кубков клуба
+        if m.get("is_cup"):
+            if outcome == "loss":
                 p["cup_out"] = True
-                cup_status += "\n🏆 ВЫ ВЫИГРАЛИ КУБОК!"
-                p["trust"] = 100
-    elif m.get("is_national"):
-        if m.get("tourney") in ["ЧЕМПИОНАТ МИРА", "ЕВРО", "КОПА АМЕРИКА"]:
-            if outcome == "win": p["wc_points"] = p.get("wc_points", 0) + 3
-            elif outcome == "draw": p["wc_points"] = p.get("wc_points", 0) + 1
+            else:
+                stages = CUP_STAGES
+                curr_idx = stages.index(p["cup_stage"]) if p["cup_stage"] in stages else 0
+                if curr_idx < len(stages) - 1:
+                    p["cup_stage"] = stages[curr_idx + 1]
+                else:
+                    if "trophies" not in p: p["trophies"] = []
+                    p["trophies"].append("Национальный Кубок")
+                    p["cup_out"] = True
+                    status += "\n🏆 ВЫ ВЫИГРАЛИ НАЦИОНАЛЬНЫЙ КУБОК!"
+                    p["trust"] = 100
+                    
+        p["money"] += p.get("contract_salary", 1500)
+        p["tour"] += 1
+        p["train_done"] = False
+        await simulate_table_tour(user_id, p["division"], p["club"], m["rival"], outcome)
     
     players[user_id] = p
     await save_data(PLAYERS_FILE, players)
     
-    if not m.get("is_cup") and not m.get("is_national"):
-        await simulate_table_tour(user_id, p["division"], p["club"], m["rival"], outcome)
-        if p.get("on_loan") and p.get("parent_club"):
-            parent_div = get_division(p["parent_club"])
-            if parent_div != p["division"]:
-                await simulate_background_division(user_id, parent_div)
-    
     text = (f"🏁 **МАТЧ ЗАВЕРШЕН**\n"
-            f"Счет: **{my_score} : {rival_score}**\n{cup_status}\n\n"
+            f"Счет: **{my_score} : {rival_score}**{status}\n\n"
             f"📊 Твоя статистика:\n"
             f"⚽ Голы: {m.get('goals', 0)} | 🅰️ Ассисты: {m.get('assists', 0)}\n"
             f"🧤 Сейвы: {m.get('saves', 0)} | 🛡️ Отборы: {m.get('tackles', 0)}\n\n"
-            f"💵 Зарплата: +{p.get('contract_salary', 1500)}$\n"
             f"📈 Тренерское доверие: {get_status_by_trust(p['trust'])}")
             
     await state.clear()
     kb = await main_menu_keyboard(callback.from_user.username, user_id)
-    
-    try:
-        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
-    except:
-        await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
-
-@dp.callback_query(F.data == "season_results")
-async def season_results_handler(callback: CallbackQuery):
-    user_id = await get_uid(callback)
-    players = await load_data(PLAYERS_FILE)
-    p = players.get(user_id)
-    
-    if not p:
-        return
-        
-    # Обновление сезона
-    p["season"] += 1
-    p["tour"] = 1
-    p["cup_out"] = False
-    p["cup_stage"] = "1/16"
-    p["cup_rivals"] = []
-    p["played_league_rivals"] = []
-    p["wc_out"] = False
-    p["wc_rivals"] = []
-    p["stats_season"] = {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0}
-    
-    # Проверка на пенсию (13 сезонов)
-    if p["season"] > 13:
-        p["retired"] = True
-        if "trophies" not in p: p["trophies"] = []
-        await add_to_retired_leaderboard(p["name"], p["rating"], len(p["trophies"]))
-        hist_str = f"Клуб: {p['club']} | Сезонов: {p['season']-1} | Рейтинг: {p['rating']} | Трофеев: {len(p['trophies'])}"
-        
-        if "career_history" not in p: p["career_history"] = []
-        p["career_history"].append(hist_str)
-        
-        players[user_id] = p
-        await save_data(PLAYERS_FILE, players)
-        
-        text = "🏁 **Твоя карьера подошла к концу!**\nТы провел 13 сезонов на высшем уровне и стал настоящей легендой. Твой профиль сохранен в Зале Славы."
-        try:
-            await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=retired_keyboard())
-        except:
-            await callback.message.answer(text, parse_mode="Markdown", reply_markup=retired_keyboard())
-        return
-        
-    p["age"] = p.get("age", 17) + 1
-    players[user_id] = p
-    await save_data(PLAYERS_FILE, players)
-    
-    text = f"🎉 **СЕЗОН ЗАВЕРШЕН!**\nТебе теперь {p['age']} лет. Начинается новый {p['season']}-й сезон! Статистика обнулена, готовься к новым победам."
-    kb = await main_menu_keyboard(callback.from_user.username, user_id)
-    
-    try:
-        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
-    except:
-        await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    try: await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except: await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
 
 async def main():
     print("Бот запущен и готов к работе...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        print("Бот остановлен.")
+    try: asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit): print("Бот остановлен.")
