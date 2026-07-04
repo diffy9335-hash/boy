@@ -15,7 +15,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
  
 # --- НАСТРОЙКА ЛОГОВ И ТОКЕНА ---
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8979310355:AAHAwTEzkj6crT8nr5GrxPKeHAoilhrrdZc"
+BOT_TOKEN = "8494602735:AAGbzBwtrk1ZycDpubMjOVRhGQWKivQYzzU"
  
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
