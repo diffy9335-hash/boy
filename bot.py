@@ -1439,7 +1439,7 @@ async def generate_moment(callback: CallbackQuery, state: FSMContext, user_id: s
     text = (f"⏱ **{m['minute']}' МИНУТА** | Момент {m['current_moment']}/{m['total_moments']}\n"
             f"⚔️ **{p['club']}** vs **{m['rival']}**\n"
             f"Счет: **{m['my_team_score']} : {m['rival_team_score']}**\n\n"
-            f"📝 **События матча:**\n{m['log'] if m['log'] else 'Идет плотная позиционная борьба...\n'}\n")
+            f"📝 **События матча:**\n{m['log'] or 'Идет плотная позиционная борьба...'}\n")
     
     m["log"] = "" 
     
