@@ -15,7 +15,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
  
 # --- НАСТРОЙКА ЛОГОВ И ТОКЕНА ---
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8494602735:AAGbzBwtrk1ZycDpubMjOVRhGQWKivQYzzU"
+BOT_TOKEN = "8979310355:AAHAwTEzkj6crT8nr5GrxPKeHAoilhrrdZc"
  
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -1602,12 +1602,12 @@ async def act_pass_handler(callback: CallbackQuery, state: FSMContext):
     m = data["match"]
     user_id = await get_uid(callback)
     
-    # Добавленная логика паса, чтобы скрипт был полноценным и рабочим
     if random.random() < 0.70:
         m["assists"] += 1
-        m["log"] += f"✅ **{m['minute']}'** | Шикарный точный пас на партнера!\n"
+        m["my_team_score"] += 1
+        m["log"] += f"✅ **{m['minute']}'** | Шикарный точный пас на партнера, и он вколачивает мяч в сетку! ГОЛ!\n"
     else:
-        m["log"] += f"❌ **{m['minute']}'** | Пас оказался слишком сильным, перехват соперника.\n"
+        m["log"] += f"❌ **{m['minute']}'** | Пас оказался неточным, перехват соперника.\n"
         
     m["current_moment"] += 1
     await state.update_data(match=m)
@@ -1783,7 +1783,6 @@ def _pick_offers_by_rating(rating: float, current_club: str, current_division: s
     Подбирает 4 клуба из разных лиг, ориентируясь на рейтинг игрока.
     Возвращает список dict(club, division, salary).
     """
-    # Определяем диапазон рейтингов команд, которые реально заинтересованы в игроке
     low  = max(0,   int(rating) - 15)
     high = min(100, int(rating) + 20)
 
@@ -1794,7 +1793,6 @@ def _pick_offers_by_rating(rating: float, current_club: str, current_division: s
             if low <= cr <= high and club != current_club:
                 candidates.append({"club": club, "division": div, "club_rating": cr})
 
-    # Если кандидатов мало — расширяем диапазон
     if len(candidates) < 4:
         candidates = [
             {"club": c, "division": d, "club_rating": CLUB_RATINGS.get(c, 50)}
@@ -1803,7 +1801,6 @@ def _pick_offers_by_rating(rating: float, current_club: str, current_division: s
             if c != current_club
         ]
 
-    # Перемешиваем, берём по одному клубу из разных лиг (не больше 4)
     random.shuffle(candidates)
     seen_divs: set = set()
     offers: list[dict] = []
@@ -1816,7 +1813,6 @@ def _pick_offers_by_rating(rating: float, current_club: str, current_division: s
         if len(offers) == 4:
             break
 
-    # Если уникальных лиг не хватило, добиваем без ограничения по дивизиону
     if len(offers) < 4:
         used = {o["club"] for o in offers}
         for cand in candidates:
@@ -1888,7 +1884,8 @@ async def season_results_handler(callback: CallbackQuery):
     # --- Проверка завершения карьеры ---
     p["age"] = p.get("age", 17) + 1
     retired_now = False
-    if p["age"] >= 36 and random.random() < 0.35:
+    
+    if season_num > 13 or (p["age"] >= 36 and random.random() < 0.35):
         retired_now = True
         p["retired"] = True
         career_summary = (f"📌 {p['name']} | Рейтинг: {p['rating']} | "
@@ -1905,7 +1902,7 @@ async def season_results_handler(callback: CallbackQuery):
             f"🏁 **ИТОГИ СЕЗОНА {season_num}**\n━━━━━━━━━━━━━━━━━━━━\n"
             f"{result_text}\n\n"
             f"📊 {stats_text}\n\n"
-            f"🏁 **В {p['age']} лет ты завершаешь карьеру. Спасибо за игру!**"
+            f"🏁 **Карьера завершена! Ты провел великий путь и уходишь на заслуженную пенсию.**"
         )
         try:
             await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=retired_keyboard())
