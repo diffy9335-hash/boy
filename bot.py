@@ -16,7 +16,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = "8494602735:AAGbzBwtrk1ZycDpubMjOVRhGQWKivQYzzU"  # Замените на ваш токен
 
-# Канал спонсора
+# Канал спонсора (замените на свои)
 SPONSOR_CHANNEL_ID = "@jdoauqh"
 SPONSOR_CHANNEL_URL = "https://t.me/jdoauqh"
  
@@ -743,7 +743,9 @@ async def claim_quests_handler(callback: CallbackQuery):
         await save_data(PLAYERS_FILE, players)
         
         await callback.answer(f"🎉 Награды получены!\n\nТвой рейтинг вырос на +{round(total_reward, 1)}", show_alert=True)
-        await quests_menu_handler(callback) # Обновляем меню
+        # Возвращаемся в главное меню, чтобы избежать залипания кнопок
+        kb = await main_menu_keyboard(callback.from_user.username, user_id)
+        await callback.message.edit_text("🏠 Главное меню", reply_markup=kb)
     else:
         await callback.answer("Нет доступных наград.", show_alert=True)
 
@@ -1955,17 +1957,18 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
     sponsor_line = (f"💼 Доход от {p.get('sponsor')}: +{sponsor_income}$\n"
                     if sponsor_income else "")
 
-    # ===== ОЦЕНКА ЗА МАТЧ (упрощённая) =====
-    rating_performance = 6.0
-    rating_performance += goals * 0.5
-    rating_performance += assists * 0.3
-    rating_performance += saves * 0.2
-    rating_performance += tackles * 0.2
+    # ===== УПРОЩЁННАЯ И ЩЕДРАЯ ОЦЕНКА ЗА МАТЧ =====
+    # Базовая 5.0, +1.0 за гол, +0.8 за ассист, +0.5 за сейв/отбор, +1.0 за победу, +0.5 за ничью, -0.3 за пропущенный.
+    rating_performance = 5.0
+    rating_performance += goals * 1.0
+    rating_performance += assists * 0.8
+    rating_performance += saves * 0.5
+    rating_performance += tackles * 0.5
     if outcome == "win":
-        rating_performance += 0.5
+        rating_performance += 1.0
     elif outcome == "draw":
-        rating_performance += 0.2
-    rating_performance -= conceded * 0.1
+        rating_performance += 0.5
+    rating_performance -= conceded * 0.3
     rating_performance = max(5.0, min(10.0, rating_performance))
     rating_performance = round(rating_performance, 1)
 
@@ -2290,6 +2293,8 @@ async def season_choice_handler(callback: CallbackQuery):
 # --- ЗАПУСК БОТА ---
 async def main():
     print("Бот запущен и ожидает сообщений...")
+    # Удаляем вебхук перед запуском polling (исправляет ошибку TelegramConflictError)
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
