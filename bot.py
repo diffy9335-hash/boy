@@ -197,9 +197,16 @@ CLUBS = {
     "Вторая Бундеслига": ["Кёльн", "Дармштадт", "Гамбург", "Фортуна Д", "Ганновер", "Падерборн", "Герта", "Шальке", "Эльферсберг", "Нюрнберг", "Кайзерслаутерн", "Магдебург"],
     "Бундеслига": ["Бавария", "Боруссия Д", "Байер", "РБ Лейпциг", "Штутгарт", "Айнтрахт Ф", "Хоффенхайм", "Фрайбург", "Вердер", "Аугсбург", "Вольфсбург", "Боруссия М", "Унион Берлин", "Майнц", "Хайденхайм", "Санкт-Паули"],
 
-    # ===== НОВЫЕ ПОРТУГАЛЬСКИЕ ЛИГИ =====
     "Сегунда лига": ["Тондела", "Визела", "Академика", "Лейшойнш", "Оливейренсе", "Фейренсе", "Варзин", "Ковильян", "Трофенсе", "Амадора", "Мануэл да Круш", "Насьонал"],
-    "Примейра": ["Порту", "Бенфика", "Спортинг", "Брага", "Витория", "Фамаликан", "Риу Аве", "Арока", "Жил Висенте", "Эшторил", "Боавишта", "Пасуш де Феррейра", "Санта-Клара", "Портимоненсе", "Морейренсе", "Насьонал"]
+    "Примейра": ["Порту", "Бенфика", "Спортинг", "Брага", "Витория", "Фамаликан", "Риу Аве", "Арока", "Жил Висенте", "Эшторил", "Боавишта", "Пасуш де Феррейра", "Санта-Клара", "Портимоненсе", "Морейренсе", "Насьонал"],
+
+    # ===== НОВАЯ БРАЗИЛЬСКАЯ ЛИГА =====
+    "Бразильская Серия А": [
+        "Фламенго", "Палмейрас", "Сантос", "Коринтианс", "Сан-Паулу",
+        "Интернасьонал", "Гремио", "Атлетико Минейро", "Крузейро", "Ботафого",
+        "Васко да Гама", "Флуминенсе", "Баия", "Форталеза", "Куяба",
+        "Атлетико Паранаэнсе", "Гояс", "Спорт Ресифи", "Сеара", "Америка Минейро"
+    ]
 }
  
 CLUB_RATINGS = {
@@ -226,7 +233,13 @@ CLUB_RATINGS = {
 
     # ===== РЕЙТИНГИ ПОРТУГАЛЬСКИХ КЛУБОВ =====
     "Тондела": 62, "Визела": 63, "Академика": 60, "Лейшойнш": 59, "Оливейренсе": 58, "Фейренсе": 61, "Варзин": 57, "Ковильян": 56, "Трофенсе": 55, "Амадора": 64, "Мануэл да Круш": 54, "Насьонал": 68,
-    "Порту": 88, "Бенфика": 86, "Спортинг": 87, "Брага": 80, "Витория": 76, "Фамаликан": 74, "Риу Аве": 72, "Арока": 70, "Жил Висенте": 71, "Эшторил": 69, "Боавишта": 73, "Пасуш де Феррейра": 68, "Санта-Клара": 67, "Портимоненсе": 70, "Морейренсе": 72, "Насьонал": 68
+    "Порту": 88, "Бенфика": 86, "Спортинг": 87, "Брага": 80, "Витория": 76, "Фамаликан": 74, "Риу Аве": 72, "Арока": 70, "Жил Висенте": 71, "Эшторил": 69, "Боавишта": 73, "Пасуш де Феррейра": 68, "Санта-Клара": 67, "Портимоненсе": 70, "Морейренсе": 72, "Насьонал": 68,
+
+    # ===== РЕЙТИНГИ БРАЗИЛЬСКИХ КЛУБОВ =====
+    "Фламенго": 85, "Палмейрас": 84, "Сантос": 80, "Коринтианс": 79, "Сан-Паулу": 78,
+    "Интернасьонал": 77, "Гремио": 76, "Атлетико Минейро": 75, "Крузейро": 74, "Ботафого": 73,
+    "Васко да Гама": 72, "Флуминенсе": 72, "Баия": 71, "Форталеза": 70, "Куяба": 69,
+    "Атлетико Паранаэнсе": 70, "Гояс": 68, "Спорт Ресифи": 69, "Сеара": 68, "Америка Минейро": 67
 }
 
 CUP_STAGES = ["1/16", "1/8", "1/4", "Полуфинал", "Финал"]
@@ -292,7 +305,8 @@ DIVISION_LADDERS = [
     ["Сегунда", "Ла Лига"],
     ["Серия Б", "Серия А"],
     ["Вторая Бундеслига", "Бундеслига"],
-    ["Сегунда лига", "Примейра"],  # Португальские лиги
+    ["Сегунда лига", "Примейра"],
+    ["Бразильская Серия А"],  # Новая бразильская лига
 ]
 
 def get_ladder(division):
@@ -313,7 +327,8 @@ def calculate_player_value(rating, division):
         "Сегунда": 35000, "Серия Б": 35000, "Вторая Бундеслига": 40000,
         "ФНЛ": 45000, "Лига 2": 45000, "Чемпионшип": 55000,
         "РПЛ": 250000, "Лига 1": 250000, "АПЛ": 350000, "Ла Лига": 350000, "Серия А": 300000, "Бундеслига": 320000,
-        "Примейра": 280000, "Сегунда лига": 40000  # Португальские
+        "Примейра": 280000, "Сегунда лига": 40000,
+        "Бразильская Серия А": 250000  # добавлено
     }
     base = mult.get(division, 15000)
     return int(rating * base * (1 + (rating - 40) / 30))
@@ -1023,7 +1038,7 @@ async def process_position(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🇷🇺 Россия", callback_data="league:Россия"), InlineKeyboardButton(text="🇫🇷 Франция", callback_data="league:Франция")],
         [InlineKeyboardButton(text="🏴󠁧󠁢󠁥󠁮󠁧󠁿 Англия", callback_data="league:Англия"), InlineKeyboardButton(text="🇪🇸 Испания", callback_data="league:Испания")],
         [InlineKeyboardButton(text="🇮🇹 Италия", callback_data="league:Италия"), InlineKeyboardButton(text="🇩🇪 Германия", callback_data="league:Германия")],
-        [InlineKeyboardButton(text="🇵🇹 Португалия", callback_data="league:Португалия")]  # Добавлена Португалия
+        [InlineKeyboardButton(text="🇵🇹 Португалия", callback_data="league:Португалия")]
     ])
     await callback.message.edit_text("🌍 **В какой стране начнешь карьеру?**", reply_markup=kb, parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_country_league)
@@ -1037,7 +1052,7 @@ async def process_country_league(callback: CallbackQuery, state: FSMContext):
     elif league_country == "Испания": div = "Сегунда"
     elif league_country == "Германия": div = "Вторая Бундеслига"
     elif league_country == "Италия": div = "Серия Б"
-    elif league_country == "Португалия": div = "Сегунда лига"  # Старт в Сегунда лиге
+    elif league_country == "Португалия": div = "Сегунда лига"
     else: div = "ФНЛ 2"
     
     await state.update_data(start_division=div)
@@ -1342,7 +1357,8 @@ async def scandal_club_choice_handler(callback: CallbackQuery):
         "ФНЛ 2": 1500, "Насьональ": 1500, "Первая лига Англии": 1800,
         "ФНЛ": 6000, "Лига 2": 6000, "Чемпионшип": 8000, "Сегунда": 8000, "Серия Б": 8000, "Вторая Бундеслига": 7500,
         "РПЛ": 30000, "Лига 1": 30000, "АПЛ": 50000, "Ла Лига": 50000, "Серия А": 45000, "Бундеслига": 48000,
-        "Примейра": 35000, "Сегунда лига": 7500  # Португалия
+        "Примейра": 35000, "Сегунда лига": 7500,
+        "Бразильская Серия А": 30000  # добавлено
     }
     p["contract_salary"] = int(base_salaries.get(p["division"], 1500) * (p["rating"] / 45))
     
@@ -1420,8 +1436,9 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
         else:
             return await callback.message.edit_text(msg, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
     
-    # --- СИСТЕМА ДИНАМИЧЕСКИХ ПЕРЕХОДОВ В БУНДЕСЛИГУ И ПРИМЕЙРУ ---
+    # --- СИСТЕМА ДИНАМИЧЕСКИХ ПЕРЕХОДОВ В БУНДЕСЛИГУ, ПРИМЕЙРУ И БРАЗИЛИЮ ---
     current_rating = p.get("rating", 40)
+    
     # Предложения из Германии
     if p["division"] not in ["Бундеслига", "Вторая Бундеслига"] and random.random() < 0.15:
         if current_rating >= 74:
@@ -1468,17 +1485,29 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
                 reply_markup=kb, parse_mode="Markdown"
             )
 
+    # ===== НОВОЕ: Предложения из Бразилии =====
+    if p["division"] not in ["Бразильская Серия А"] and random.random() < 0.15:
+        if current_rating >= 74:
+            br_offers = random.sample(CLUBS["Бразильская Серия А"], 2)
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=f"🇧🇷 {c}", callback_data=f"scandal_club:{c}")] for c in br_offers
+            ] + [[InlineKeyboardButton(text="❌ Отклонить предложение", callback_data="back_to_menu")]])
+            await callback.message.delete()
+            return await callback.message.answer(
+                text=f"📈 **ТРАНСФЕРНОЕ ПРЕДЛОЖЕНИЕ!** Твой высокий рейтинг ({current_rating}) привлек внимание клубов из Бразилии! Тебе предлагают контракт в **Бразильской Серии А**:",
+                reply_markup=kb, parse_mode="Markdown"
+            )
+        # Для Бразилии нет второго дивизиона, поэтому только при >=74
+
     if p["tour"] > 15:
         return await season_results_handler(callback)
     
     # --- КЛУБНЫЙ МАТЧ ---
-    # (удалена функция check_random_events)
-
     if random.random() < 0.01:
         div_clubs = [c for c in CLUBS[p["division"]] if c != p["club"]]
         available_clubs = random.sample(div_clubs, min(len(div_clubs), 2))
         
-        top_leagues = ["РПЛ", "Лига 1", "АПЛ", "Ла Лига", "Серия А", "Бундеслига", "Примейра"]
+        top_leagues = ["РПЛ", "Лига 1", "АПЛ", "Ла Лига", "Серия А", "Бундеслига", "Примейра", "Бразильская Серия А"]
         my_top_league = "РПЛ"
         if p["division"] in ["Насьональ", "Лига 2", "Лига 1"]: my_top_league = "Лига 1"
         elif p["division"] in ["Первая лига Англии", "Чемпионшип", "АПЛ"]: my_top_league = "АПЛ"
@@ -1486,6 +1515,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
         elif p["division"] in ["Серия Б", "Серия А"]: my_top_league = "Серия А"
         elif p["division"] in ["Вторая Бундеслига", "Бундеслига"]: my_top_league = "Бундеслига"
         elif p["division"] in ["Сегунда лига", "Примейра"]: my_top_league = "Примейра"
+        elif p["division"] in ["Бразильская Серия А"]: my_top_league = "Бразильская Серия А"
         
         alt_leagues = [l for l in top_leagues if l != my_top_league]
         alt_league = random.choice(alt_leagues) if alt_leagues else "РПЛ"
@@ -1515,6 +1545,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
         elif p["division"] in ["Серия Б", "Серия А"]: country_leagues = ["Серия Б", "Серия А"]
         elif p["division"] in ["Вторая Бундеслига", "Бундеслига"]: country_leagues = ["Вторая Бундеслига", "Бундеслига"]
         elif p["division"] in ["Сегунда лига", "Примейра"]: country_leagues = ["Сегунда лига", "Примейра"]
+        elif p["division"] in ["Бразильская Серия А"]: country_leagues = ["Бразильская Серия А"]
         
         rival_pool = []
         for l in country_leagues:
