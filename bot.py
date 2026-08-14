@@ -11,21 +11,21 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
- 
+
 # --- НАСТРОЙКА ЛОГОВ И ТОКЕНА ---
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8494602735:AAFaDVdnMPb04VMF0NAr9VUT9g2n67nvE8g"  # Замените на ваш токен
+BOT_TOKEN = "8494602735:AAFaDVdnMPb04VMF0NAr9VUT9g2n67nvE8g"
 
-# Канал спонсора (замените на свои)
+# Канал спонсора
 SPONSOR_CHANNEL_ID = "@jdoauqh"
 SPONSOR_CHANNEL_URL = "https://t.me/jdoauqh"
- 
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
- 
+
 # --- СПИСОК АДМИНИСТРАТОРОВ ---
 ADMINS = ["Diffysh1", "SilentRagex"]
- 
+
 # --- ФАЙЛЫ ДАННЫХ ---
 PLAYERS_FILE = "players.json"
 LEADERBOARD_FILE = "leaderboard.json"
@@ -43,13 +43,13 @@ def _load_data_sync(filename):
             logging.error(f"Файл {filename} был поврежден ({e}) и переименован в {backup_name}. Создан новый.")
             return {}
     return {}
- 
+
 def _save_data_sync(filename, data):
     tmp_path = f"{filename}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
     os.replace(tmp_path, filename)
- 
+
 # --- СИСТЕМА КЭШИРОВАНИЯ И БЕЗОПАСНЫЕ БЛОКИРОВКИ ---
 _cache_locks = {}
 
@@ -60,7 +60,7 @@ def get_cache_lock(filename):
 
 async def load_data(filename):
     return await asyncio.to_thread(_load_data_sync, filename)
- 
+
 async def save_data(filename, data):
     lock = get_cache_lock(filename)
     async with lock:
@@ -82,7 +82,7 @@ async def get_uid(event):
 
 _user_locks = {}
 _table_lock = None
- 
+
 def get_user_lock(user_id: str) -> asyncio.Lock:
     if user_id not in _user_locks:
         _user_locks[user_id] = asyncio.Lock()
@@ -108,7 +108,7 @@ def sub_keyboard():
         [InlineKeyboardButton(text="📢 Подписаться на Спонсора", url=SPONSOR_CHANNEL_URL)],
         [InlineKeyboardButton(text="✅ Я подписался (Проверить)", callback_data="check_sub_callback")]
     ])
- 
+
 def with_user_lock(func):
     @functools.wraps(func)
     async def wrapper(event, *args, **kwargs):
@@ -117,10 +117,10 @@ def with_user_lock(func):
         async with lock:
             return await func(event, *args, **kwargs)
     return wrapper
- 
+
 def retired_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Начать новую карьеру", callback_data="start_new_career")]])
- 
+
 async def deny_if_retired_cb(callback: CallbackQuery, p) -> bool:
     if not p:
         await callback.message.answer("⚠️ Профиль не найден. Нажми /start, чтобы начать.", parse_mode="Markdown")
@@ -135,7 +135,7 @@ async def deny_if_retired_cb(callback: CallbackQuery, p) -> bool:
             await callback.message.answer("🏁 **Твоя карьера уже завершена!**", reply_markup=retired_keyboard())
         return True
     return False
- 
+
 async def deny_if_retired_msg(message: Message, p) -> bool:
     if not p:
         await message.answer("⚠️ Профиль не найден. Нажми /start, чтобы начать.", parse_mode="Markdown")
@@ -147,7 +147,7 @@ async def deny_if_retired_msg(message: Message, p) -> bool:
         )
         return True
     return False
- 
+
 # --- СОСТОЯНИЯ FSM ---
 class PlayerCreation(StatesGroup):
     waiting_for_name = State()
@@ -156,15 +156,15 @@ class PlayerCreation(StatesGroup):
     waiting_for_country_league = State()
     waiting_for_number = State()
     waiting_for_club = State()
- 
+
 class AdminPanel(StatesGroup):
     waiting_for_user_id = State()
     waiting_for_money = State()
     waiting_for_rating = State()
- 
+
 class InterviewState(StatesGroup):
-    waiting_for_answer = State()  # Храним данные интервью в state
- 
+    waiting_for_answer = State()
+
 # --- ДАННЫЕ И СПРАВОЧНИКИ ---
 EURO_NATIONS = [
     "Россия", "Франция", "Италия", "Испания", "Германия", "Англия",
@@ -172,74 +172,106 @@ EURO_NATIONS = [
     "Дания", "Швейцария", "Польша", "Швеция", "Норвегия", "Сербия", "Турция"
 ]
 
-# Оставляем только европейские нации
 NATIONS = EURO_NATIONS
- 
+
 CLUBS = {
+    # РОССИЯ
     "ФНЛ 2": ["Знамя Труда", "Сатурн Раменское", "Коломна", "Зенит-2", "Спартак-2", "Амкар Пермь", "Динамо Киров", "Рубин-2", "Торпедо Владимир", "Тверь", "Химик Дзержинск", "Иркутск"],
     "ФНЛ": ["Черноморец", "Шинник", "Урал", "Сочи", "Балтика", "Родина", "Торпедо М", "Арсенал Тула", "КАМАЗ", "Енисей", "Нефтехимик", "СКА-Хабаровск", "Уфа", "Тюмень", "Ротор", "Сокол", "Чайка", "Алания"],
     "РПЛ": ["Зенит", "Краснодар", "Динамо М", "Локомотив", "Спартак", "ЦСКА", "Ростов", "Рубин", "Крылья Советов", "Ахмат", "Факел", "Оренбург", "Пари НН", "Химки", "Акрон", "Динамо Мх"],
     
+    # ФРАНЦИЯ
     "Насьональ": ["Ред Стар", "Ним", "Дижон", "Сошо", "Руан", "Ле Ман", "Версаль", "Нанси", "Шатору", "Кевийи", "Орлеан", "Булонь"],
     "Лига 2": ["Пари ФК", "Кан", "Генгам", "Амьен", "Бастия", "Бордо", "Труа", "Мец", "Аяччо", "Лорьян", "Клермон", "Анси", "Гренобль", "Дюнкерк", "По", "Родез", "Лаваль", "Ньор"],
     "Лига 1": ["ПСЖ", "Монако", "Брест", "Лилль", "Ницца", "Лион", "Ланс", "Марсель", "Ренн", "Реймс", "Тулуза", "Монпелье", "Страсбур", "Нант", "Гавр", "Осер", "Анже", "Сент-Этьен"],
     
+    # АНГЛИЯ
     "Первая лига Англии": ["Рединг", "Уиган", "Болтон", "Чарльтон", "Барнсли", "Питерборо", "Блэкпул", "Портсмут", "Дерби Каунти", "Стивенедж", "Линкольн", "Шрусбери"],
     "Чемпионшип": ["Лестер", "Лидс", "Саутгемптон", "Ипсвич", "Вест Бромвич", "Норвич", "Халл Сити", "Ковентри", "Престон", "Мидлсбро", "Кардифф", "Бристоль Сити", "Сандерленд", "Суонси", "Уотфорд", "Миллуолл", "КПР", "Блэкберн"],
     "АПЛ": ["Манчестер Сити", "Арсенал", "Ливерпуль", "Астон Вилла", "Тоттенхэм", "Челси", "Ньюкасл", "Манчестер Юнайтед", "Вест Хэм", "Борнмут", "Кристал Пэлас", "Брайтон", "Фулхэм", "Вулверхэмптон", "Эвертон", "Брентфорд", "Ноттингем Форест", "Шеффилд Юнайтед"],
 
+    # ИСПАНИЯ
     "Сегунда": ["Эспаньол", "Сарагоса", "Леванте", "Эйбар", "Спортинг Хихон", "Вальядолид", "Тенерифе", "Овьедо", "Расинг", "Альбасете", "Картахена", "Бургос"],
     "Ла Лига": ["Реал Мадрид", "Барселона", "Атлетико", "Жирона", "Атлетик", "Реал Сосьедад", "Бетис", "Вильярреал", "Валенсия", "Алавес", "Осасуна", "Хетафе", "Сельта", "Севилья", "Мальорка", "Лас-Пальмас"],
 
+    # ИТАЛИЯ
     "Серия Б": ["Сампдория", "Парма", "Палермо", "Венеция", "Бари", "Кремонезе", "Комо", "Пиза", "Брешия", "Катандзаро", "Специя", "Тернана"],
     "Серия А": ["Интер", "Милан", "Ювентус", "Аталанта", "Болонья", "Рома", "Лацио", "Фиорентина", "Торино", "Наполи", "Дженоа", "Монца", "Лечче", "Удинезе", "Кальяри", "Эмполи"],
 
+    # ГЕРМАНИЯ
     "Вторая Бундеслига": ["Кёльн", "Дармштадт", "Гамбург", "Фортуна Д", "Ганновер", "Падерборн", "Герта", "Шальке", "Эльферсберг", "Нюрнберг", "Кайзерслаутерн", "Магдебург"],
     "Бундеслига": ["Бавария", "Боруссия Д", "Байер", "РБ Лейпциг", "Штутгарт", "Айнтрахт Ф", "Хоффенхайм", "Фрайбург", "Вердер", "Аугсбург", "Вольфсбург", "Боруссия М", "Унион Берлин", "Майнц", "Хайденхайм", "Санкт-Паули"],
 
+    # ПОРТУГАЛИЯ
     "Сегунда лига": ["Тондела", "Визела", "Академика", "Лейшойнш", "Оливейренсе", "Фейренсе", "Варзин", "Ковильян", "Трофенсе", "Амадора", "Мануэл да Круш", "Насьонал"],
     "Примейра": ["Порту", "Бенфика", "Спортинг", "Брага", "Витория", "Фамаликан", "Риу Аве", "Арока", "Жил Висенте", "Эшторил", "Боавишта", "Пасуш де Феррейра", "Санта-Клара", "Портимоненсе", "Морейренсе", "Насьонал"],
 
-    # ===== НОВАЯ БРАЗИЛЬСКАЯ ЛИГА =====
+    # БРАЗИЛИЯ
     "Бразильская Серия А": [
         "Фламенго", "Палмейрас", "Сантос", "Коринтианс", "Сан-Паулу",
         "Интернасьонал", "Гремио", "Атлетико Минейро", "Крузейро", "Ботафого",
         "Васко да Гама", "Флуминенсе", "Баия", "Форталеза", "Куяба",
         "Атлетико Паранаэнсе", "Гояс", "Спорт Ресифи", "Сеара", "Америка Минейро"
+    ],
+
+    # НИДЕРЛАНДЫ
+    "Эрстедивизи": [
+        "Йонг Аякс", "Йонг ПСВ", "Йонг Утрехт", "Ден Босх", "Камбюр", "Де Графсхап",
+        "Дордрехт", "Эйндховен", "Эммен", "Гронинген", "Хелмонд Спорт", "Хераклес",
+        "Маастрихт", "Осс", "Рода", "Телстар", "Венло", "Виллем II", "Зволле", "Алмере Сити"
+    ],
+    "Эредивизи": [
+        "Аякс", "ПСВ", "Фейеноорд", "АЗ Алкмаар", "Твенте", "Утрехт", "Витесс",
+        "Спарта Роттердам", "Херенвен", "Фортуна Ситтард", "НЕК", "Гоу Эхед Иглз",
+        "Валвейк", "Эксельсиор", "Волендам", "Эммен", "Камбюр", "Гронинген"
     ]
 }
- 
+
 CLUB_RATINGS = {
+    # РОССИЯ
     "Знамя Труда": 40, "Сатурн Раменское": 45, "Коломна": 38, "Зенит-2": 52, "Спартак-2": 50, "Амкар Пермь": 48, "Динамо Киров": 42, "Рубин-2": 44, "Торпедо Владимир": 41, "Тверь": 39, "Химик Дзержинск": 43, "Иркутск": 40,
     "Черноморец": 60, "Шинник": 62, "Урал": 68, "Сочи": 69, "Балтика": 67, "Родина": 65, "Торпедо М": 66, "Арсенал Тула": 64, "КАМАЗ": 58, "Енисей": 63, "Нефтехимик": 61, "СКА-Хабаровск": 60, "Уфа": 59, "Тюмень": 57, "Ротор": 62, "Сокол": 56, "Чайка": 55, "Алания": 64,
     "Зенит": 85, "Краснодар": 83, "Динамо М": 81, "Локомотив": 80, "Спартак": 82, "ЦСКА": 81, "Ростов": 77, "Рубин": 75, "Крылья Советов": 76, "Ахмат": 74, "Факел": 72, "Оренбург": 73, "Пари НН": 71, "Химки": 70, "Акрон": 69, "Динамо Мх": 68,
     
+    # ФРАНЦИЯ
     "Ред Стар": 45, "Ним": 44, "Дижон": 46, "Сошо": 47, "Руан": 42, "Ле Ман": 43, "Версаль": 41, "Нанси": 48, "Шатору": 40, "Кевийи": 45, "Орлеан": 42, "Булонь": 39,
     "Пари ФК": 65, "Кан": 64, "Генгам": 62, "Амьен": 61, "Бастия": 60, "Бордо": 66, "Труа": 63, "Мец": 68, "Аяччо": 59, "Лорьян": 67, "Клермон": 65, "Анси": 58, "Гренобль": 62, "Дюнкерк": 57, "По": 56, "Родез": 61, "Лаваль": 60, "Ньор": 55,
     "ПСЖ": 90, "Монако": 83, "Брест": 79, "Лилль": 82, "Ницца": 80, "Лион": 83, "Ланс": 81, "Марсель": 82, "Ренн": 80, "Реймс": 77, "Тулуза": 76, "Монпелье": 75, "Страсбур": 76, "Нант": 75, "Гавр": 73, "Осер": 72, "Анже": 71, "Сент-Этьен": 74,
 
+    # АНГЛИЯ
     "Рединг": 50, "Уиган": 52, "Болтон": 51, "Чарльтон": 49, "Барнсли": 53, "Питерборо": 50, "Блэкпул": 48, "Портсмут": 54, "Дерби Каунти": 55, "Стивенедж": 46, "Линкольн": 47, "Шрусбери": 45,
     "Лестер": 75, "Лидс": 74, "Саутгемптон": 73, "Ипсвич": 70, "Вест Бромвич": 69, "Норвич": 68, "Халл Сити": 67, "Ковентри": 68, "Престон": 66, "Мидлсбро": 69, "Кардифф": 65, "Бристоль Сити": 64, "Сандерленд": 68, "Суонси": 66, "Уотфорд": 70, "Миллуолл": 65, "КПР": 64, "Блэкберн": 66,
     "Манчестер Сити": 92, "Арсенал": 89, "Ливерпуль": 89, "Астон Вилла": 84, "Тоттенхэм": 85, "Челси": 84, "Ньюкасл": 83, "Манчестер Юнайтед": 84, "Вест Хэм": 81, "Борнмут": 78, "Кристал Пэлас": 78, "Брайтон": 80, "Фулхэм": 79, "Вулверхэмптон": 78, "Эвертон": 77, "Брентфорд": 78, "Ноттингем Форест": 76, "Шеффилд Юнайтед": 75,
 
+    # ИСПАНИЯ
     "Эспаньол": 72, "Сарагоса": 70, "Леванте": 71, "Эйбар": 71, "Спортинг Хихон": 69, "Вальядолид": 72, "Тенерифе": 68, "Овьедо": 68, "Расинг": 67, "Альбасете": 66, "Картахена": 65, "Бургос": 64,
     "Реал Мадрид": 93, "Барселона": 90, "Атлетико": 87, "Жирона": 83, "Атлетик": 82, "Реал Сосьедад": 82, "Бетис": 81, "Вильярреал": 80, "Валенсия": 79, "Алавес": 77, "Осасуна": 78, "Хетафе": 77, "Сельта": 78, "Севилья": 80, "Мальорка": 76, "Лас-Пальмас": 75,
 
+    # ИТАЛИЯ
     "Сампдория": 70, "Парма": 72, "Палермо": 71, "Венеция": 71, "Бари": 69, "Кремонезе": 72, "Комо": 70, "Пиза": 68, "Брешия": 67, "Катандзаро": 66, "Специя": 69, "Тернана": 65,
     "Интер": 90, "Милан": 86, "Ювентус": 86, "Аталанта": 84, "Болонья": 82, "Рома": 83, "Лацио": 82, "Фиорентина": 81, "Торино": 79, "Наполи": 84, "Дженоа": 77, "Монца": 76, "Лечче": 75, "Удинезе": 76, "Кальяри": 75, "Эмполи": 74,
 
+    # ГЕРМАНИЯ
     "Кёльн": 72, "Дармштадт": 69, "Гамбург": 72, "Фортуна Д": 71, "Ганновер": 70, "Падерборн": 68, "Герта": 71, "Шальке": 70, "Эльферсберг": 66, "Нюрнберг": 67, "Кайзерслаутерн": 68, "Магдебург": 66,
     "Бавария": 91, "Боруссия Д": 86, "Байер": 88, "РБ Лейпциг": 86, "Штутгарт": 82, "Айнтрахт Ф": 81, "Хоффенхайм": 78, "Фрайбург": 79, "Вердер": 77, "Аугсбург": 76, "Вольфсбург": 78, "Боруссия М": 77, "Унион Берлин": 76, "Майнц": 75, "Хайденхайм": 76, "Санкт-Паули": 74,
 
-    # ===== РЕЙТИНГИ ПОРТУГАЛЬСКИХ КЛУБОВ =====
+    # ПОРТУГАЛИЯ
     "Тондела": 62, "Визела": 63, "Академика": 60, "Лейшойнш": 59, "Оливейренсе": 58, "Фейренсе": 61, "Варзин": 57, "Ковильян": 56, "Трофенсе": 55, "Амадора": 64, "Мануэл да Круш": 54, "Насьонал": 68,
     "Порту": 88, "Бенфика": 86, "Спортинг": 87, "Брага": 80, "Витория": 76, "Фамаликан": 74, "Риу Аве": 72, "Арока": 70, "Жил Висенте": 71, "Эшторил": 69, "Боавишта": 73, "Пасуш де Феррейра": 68, "Санта-Клара": 67, "Портимоненсе": 70, "Морейренсе": 72, "Насьонал": 68,
 
-    # ===== РЕЙТИНГИ БРАЗИЛЬСКИХ КЛУБОВ =====
+    # БРАЗИЛИЯ
     "Фламенго": 85, "Палмейрас": 84, "Сантос": 80, "Коринтианс": 79, "Сан-Паулу": 78,
     "Интернасьонал": 77, "Гремио": 76, "Атлетико Минейро": 75, "Крузейро": 74, "Ботафого": 73,
     "Васко да Гама": 72, "Флуминенсе": 72, "Баия": 71, "Форталеза": 70, "Куяба": 69,
-    "Атлетико Паранаэнсе": 70, "Гояс": 68, "Спорт Ресифи": 69, "Сеара": 68, "Америка Минейро": 67
+    "Атлетико Паранаэнсе": 70, "Гояс": 68, "Спорт Ресифи": 69, "Сеара": 68, "Америка Минейро": 67,
+
+    # НИДЕРЛАНДЫ
+    "Йонг Аякс": 58, "Йонг ПСВ": 56, "Йонг Утрехт": 52, "Ден Босх": 55, "Камбюр": 62, "Де Графсхап": 60,
+    "Дордрехт": 54, "Эйндховен": 57, "Эммен": 63, "Гронинген": 66, "Хелмонд Спорт": 53, "Хераклес": 65,
+    "Маастрихт": 56, "Осс": 51, "Рода": 59, "Телстар": 52, "Венло": 58, "Виллем II": 64, "Зволле": 63, "Алмере Сити": 55,
+    "Аякс": 89, "ПСВ": 88, "Фейеноорд": 86, "АЗ Алкмаар": 82, "Твенте": 79, "Утрехт": 77, "Витесс": 76,
+    "Спарта Роттердам": 74, "Херенвен": 73, "Фортуна Ситтард": 72, "НЕК": 72, "Гоу Эхед Иглз": 70,
+    "Валвейк": 69, "Эксельсиор": 68, "Волендам": 67, "Камбюр": 62, "Гронинген": 66
 }
 
 CUP_STAGES = ["1/16", "1/8", "1/4", "Полуфинал", "Финал"]
@@ -254,7 +286,7 @@ SPONSORS_DATA = {
     "Рибок":    {"emoji": "🏅", "min_rating": 67, "income_per_match": 2_200, "sign_bonus": 10_000},
     "ПСБ банк": {"emoji": "🏦", "min_rating": 67, "income_per_match": 2_800, "sign_bonus": 13_000},
 }
- 
+
 POSITIONS = {
     "⚽ Нападающий": "ST", 
     "🪄 Полузащитник": "CM", 
@@ -306,7 +338,8 @@ DIVISION_LADDERS = [
     ["Серия Б", "Серия А"],
     ["Вторая Бундеслига", "Бундеслига"],
     ["Сегунда лига", "Примейра"],
-    ["Бразильская Серия А"],  # Новая бразильская лига
+    ["Бразильская Серия А"],
+    ["Эрстедивизи", "Эредивизи"],
 ]
 
 def get_ladder(division):
@@ -314,13 +347,13 @@ def get_ladder(division):
         if division in ladder:
             return ladder
     return [division]
- 
+
 def get_status_by_trust(trust):
     if 0 <= trust <= 20: return "Глубокий резерв ❌"
     elif 21 <= trust <= 50: return "Скамейка запасных 🪑"
     elif 51 <= trust <= 75: return "Джокер (Выход на замену) ⏱️"
     return "Игрок старта 🔥"
- 
+
 def calculate_player_value(rating, division):
     mult = {
         "ФНЛ 2": 12500, "Насьональ": 12500, "Первая лига Англии": 15000,
@@ -328,11 +361,12 @@ def calculate_player_value(rating, division):
         "ФНЛ": 45000, "Лига 2": 45000, "Чемпионшип": 55000,
         "РПЛ": 250000, "Лига 1": 250000, "АПЛ": 350000, "Ла Лига": 350000, "Серия А": 300000, "Бундеслига": 320000,
         "Примейра": 280000, "Сегунда лига": 40000,
-        "Бразильская Серия А": 250000  # добавлено
+        "Бразильская Серия А": 250000,
+        "Эрстедивизи": 35000, "Эредивизи": 280000
     }
     base = mult.get(division, 15000)
     return int(rating * base * (1 + (rating - 40) / 30))
- 
+
 async def add_to_retired_leaderboard(name, rating, trophies_count):
     leaderboard = await load_data(LEADERBOARD_FILE)
     if "top_careers" not in leaderboard:
@@ -360,7 +394,7 @@ async def track_activity(user_id: str):
         p["activity_minutes"] = p.get("activity_minutes", 0) + random.randint(1, 3)
         players[user_id] = p
         await save_data(PLAYERS_FILE, players)
- 
+
 def _init_tables_internal(tables, user_id, division, player_club=None):
     clubs_list = CLUBS[division].copy()
     if player_club and player_club not in clubs_list:
@@ -376,7 +410,7 @@ async def init_tables_for_user(user_id, division, player_club=None):
         tables = await load_data(TABLES_FILE)
         _init_tables_internal(tables, user_id, division, player_club)
         await save_data(TABLES_FILE, tables)
- 
+
 async def simulate_table_tour(user_id, division, player_club, player_match_rival, player_match_outcome):
     async with get_table_lock():
         tables = await load_data(TABLES_FILE)
@@ -449,13 +483,13 @@ async def simulate_background_division(user_id, division):
  
         tables[user_id][division] = sorted(table, key=lambda x: x["points"], reverse=True)
         await save_data(TABLES_FILE, tables)
- 
+
 # --- ГЛАВНОЕ МЕНЮ ---
 async def main_menu_keyboard(username: str = None, user_id: str = None):
     match_btn_text = "🎮 Матч"
     if user_id:
         p = (await load_data(PLAYERS_FILE)).get(user_id)
-        if p and p.get("tour", 1) > 15:
+        if p and p.get("tour", 1) > 30:
             match_btn_text = "🏁 Итоги сезона"
                 
     kb = [
@@ -470,7 +504,7 @@ async def main_menu_keyboard(username: str = None, user_id: str = None):
         kb.append([InlineKeyboardButton(text="👑 Админ-панель", callback_data="admin_panel")])
         
     return InlineKeyboardMarkup(inline_keyboard=kb)
- 
+
 @dp.callback_query(F.data == "menu_online")
 async def online_handler(callback: CallbackQuery):
     players = await load_data(PLAYERS_FILE)
@@ -542,12 +576,11 @@ async def interview_handler(callback: CallbackQuery, state: FSMContext):
     if len(parts) != 3:
         return await callback.answer()
     q_idx  = int(parts[1])
-    choice = parts[2]  # "a" or "b"
+    choice = parts[2]
 
     data = await state.get_data()
     iv = data.get("interview")
     if not iv:
-        # Интервью уже завершено — просто показываем меню
         await callback.answer()
         user_id = await get_uid(callback)
         kb = await main_menu_keyboard(callback.from_user.username, user_id)
@@ -582,7 +615,6 @@ async def interview_handler(callback: CallbackQuery, state: FSMContext):
         except Exception as e:
             logging.warning(f"interview next_q error: {e}")
     else:
-        # Завершаем интервью
         await state.update_data(interview=None)
         players = await load_data(PLAYERS_FILE)
         p = players.get(user_id)
@@ -758,7 +790,6 @@ async def claim_quests_handler(callback: CallbackQuery):
         await save_data(PLAYERS_FILE, players)
         
         await callback.answer(f"🎉 Награды получены!\n\nТвой рейтинг вырос на +{round(total_reward, 1)}", show_alert=True)
-        # Возвращаемся в главное меню, чтобы избежать залипания кнопок
         kb = await main_menu_keyboard(callback.from_user.username, user_id)
         await callback.message.edit_text("🏠 Главное меню", reply_markup=kb)
     else:
@@ -776,6 +807,10 @@ async def personal_life_menu(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🍽 В ресторан (-500$)", callback_data="personal:rest")],
         [InlineKeyboardButton(text="💃 Найти девушку (-2000$)" if p.get("girlfriend", "Нет") == "Нет" else "🎁 Подарок девушке (-1000$)", callback_data="personal:girl")],
+        [InlineKeyboardButton(text="🧘 Йога (-300$)", callback_data="personal:yoga")],
+        [InlineKeyboardButton(text="🪂 Парашют (-1500$)", callback_data="personal:parachute")],
+        [InlineKeyboardButton(text="🎁 Благотворительность (-1000$)", callback_data="personal:charity")],
+        [InlineKeyboardButton(text="🎉 Вечеринка (-800$)", callback_data="personal:party")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
     ])
 
@@ -798,30 +833,52 @@ async def personal_action(callback: CallbackQuery):
     action = callback.data.split(":")[1]
     cost = 0
     msg = ""
+    fatigue_reduction = 0
+    trust_boost = 0
 
     if action == "rest":
         cost = 500
-        if p.get("money", 0) >= cost:
-            p["fatigue"] = max(0, p.get("fatigue", 0) - 15)
-            msg = "🍽 Ты отлично поужинал! Усталость -15%."
-        else: msg = "❌ Не хватает денег."
+        fatigue_reduction = 15
+        msg = "🍽 Ты отлично поужинал! Усталость -15%."
     elif action == "girl":
         if p.get("girlfriend", "Нет") == "Нет":
             cost = 2000
             if p.get("money", 0) >= cost:
                 p["girlfriend"] = "Есть"
                 msg = "💃 Ты познакомился с потрясающей девушкой!"
-            else: msg = "❌ Не хватает денег на красивые ухаживания."
+            else:
+                msg = "❌ Не хватает денег на красивые ухаживания."
         else:
             cost = 1000
-            if p.get("money", 0) >= cost:
-                p["fatigue"] = max(0, p.get("fatigue", 0) - 20)
-                msg = "🎁 Ты подарил девушке дорогие украшения! Усталость -20%."
-            else: msg = "❌ Не хватает денег на достойный подарок."
+            fatigue_reduction = 20
+            msg = "🎁 Ты подарил девушке дорогие украшения! Усталость -20%."
+    elif action == "yoga":
+        cost = 300
+        fatigue_reduction = 20
+        trust_boost = 1
+        msg = "🧘 Йога помогла тебе расслабиться и восстановить баланс! Усталость -20%."
+    elif action == "parachute":
+        cost = 1500
+        fatigue_reduction = 25
+        trust_boost = 5
+        msg = "🪂 Адреналин от прыжка с парашютом зарядил тебя энергией! Усталость -25%."
+    elif action == "charity":
+        cost = 1000
+        trust_boost = 10
+        msg = "🎁 Благотворительность повысила твой авторитет в глазах болельщиков! Доверие +10."
+    elif action == "party":
+        cost = 800
+        fatigue_reduction = 15
+        trust_boost = -2
+        msg = "🎉 Вечеринка удалась! Усталость -15%, но болельщики немного недовольны."
 
     if "❌" not in msg:
-        p["money"] -= cost
-        p["trust"] = min(100, p["trust"] + 2)
+        if p.get("money", 0) >= cost:
+            p["money"] -= cost
+            p["fatigue"] = max(0, p.get("fatigue", 0) - fatigue_reduction)
+            p["trust"] = min(100, max(0, p.get("trust", 15) + trust_boost))
+        else:
+            msg = "❌ Не хватает денег."
 
     players[user_id] = p
     await save_data(PLAYERS_FILE, players)
@@ -830,6 +887,10 @@ async def personal_action(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🍽 В ресторан (-500$)", callback_data="personal:rest")],
         [InlineKeyboardButton(text="💃 Найти девушку (-2000$)" if p.get("girlfriend", "Нет") == "Нет" else "🎁 Подарок девушке (-1000$)", callback_data="personal:girl")],
+        [InlineKeyboardButton(text="🧘 Йога (-300$)", callback_data="personal:yoga")],
+        [InlineKeyboardButton(text="🪂 Парашют (-1500$)", callback_data="personal:parachute")],
+        [InlineKeyboardButton(text="🎁 Благотворительность (-1000$)", callback_data="personal:charity")],
+        [InlineKeyboardButton(text="🎉 Вечеринка (-800$)", callback_data="personal:party")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
     ])
     text = (f"🍷 **ЛИЧНАЯ ЖИЗНЬ**\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -837,7 +898,7 @@ async def personal_action(callback: CallbackQuery):
             f"🔋 Усталость: {p.get('fatigue', 0)}%\n\n"
             f"Трать деньги, чтобы снижать усталость!")
     await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="Markdown")
- 
+
 # --- АДМИН-ПАНЕЛЬ ---
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel_handler(callback: CallbackQuery, state: FSMContext):
@@ -858,7 +919,7 @@ async def admin_panel_handler(callback: CallbackQuery, state: FSMContext):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="back_to_menu")]])
         )
     await state.set_state(AdminPanel.waiting_for_user_id)
- 
+
 @dp.message(AdminPanel.waiting_for_user_id)
 async def admin_user_management(message: Message, state: FSMContext):
     target_id = message.text.strip()
@@ -869,7 +930,7 @@ async def admin_user_management(message: Message, state: FSMContext):
     
     await show_admin_user_profile(message, target_id)
     await state.clear()
- 
+
 async def show_admin_user_profile(message_or_call, target_id):
     players = await load_data(PLAYERS_FILE)
     p = players[target_id]
@@ -886,7 +947,7 @@ async def show_admin_user_profile(message_or_call, target_id):
         f"⚡️ Рейтинг: {p['rating']}/100\n"
         f"🏢 Клуб: {p['club']} ({p['position']})\n"
         f"💵 Баланс: {p.get('money', 0)}$ | 🏷️ Стоимость: {val:,}$\n"
-        f"🏟️ Сезон: {p['season']} | Тур: {p['tour']}/15\n━━━━━━━━━━━━━━━━━━━━\n{stats_text}"
+        f"🏟️ Сезон: {p['season']} | Тур: {p['tour']}/30\n━━━━━━━━━━━━━━━━━━━━\n{stats_text}"
     )
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -901,7 +962,7 @@ async def show_admin_user_profile(message_or_call, target_id):
         await message_or_call.answer(text, reply_markup=kb)
     else:
         await message_or_call.message.edit_text(text, reply_markup=kb)
- 
+
 @dp.callback_query(F.data.startswith("adm_tour:"))
 async def adm_skip_tour(callback: CallbackQuery):
     if not callback.from_user.username or callback.from_user.username.replace("@", "") not in ADMINS:
@@ -913,7 +974,7 @@ async def adm_skip_tour(callback: CallbackQuery):
             players[target_id]["tour"] += 1
             await save_data(PLAYERS_FILE, players)
             await show_admin_user_profile(callback, target_id)
- 
+
 @dp.callback_query(F.data.startswith("adm_season:"))
 async def adm_skip_season(callback: CallbackQuery):
     if not callback.from_user.username or callback.from_user.username.replace("@", "") not in ADMINS:
@@ -926,14 +987,14 @@ async def adm_skip_season(callback: CallbackQuery):
             players[target_id]["tour"] = 1
             await save_data(PLAYERS_FILE, players)
             await show_admin_user_profile(callback, target_id)
- 
+
 @dp.callback_query(F.data.startswith("adm_money:"))
 async def adm_money_btn(callback: CallbackQuery, state: FSMContext):
     target_id = callback.data.split(":")[1]
     await state.update_data(adm_target_id=target_id)
     await callback.message.edit_text("💰 Введите сумму долларов для выдачи:", parse_mode="Markdown")
     await state.set_state(AdminPanel.waiting_for_money)
- 
+
 @dp.message(AdminPanel.waiting_for_money)
 async def adm_process_money(message: Message, state: FSMContext):
     data = await state.get_data()
@@ -947,14 +1008,14 @@ async def adm_process_money(message: Message, state: FSMContext):
             await save_data(PLAYERS_FILE, players)
             await show_admin_user_profile(message, target_id)
     await state.clear()
- 
+
 @dp.callback_query(F.data.startswith("adm_rating:"))
 async def adm_rating_btn(callback: CallbackQuery, state: FSMContext):
     target_id = callback.data.split(":")[1]
     await state.update_data(adm_target_id=target_id)
     await callback.message.edit_text("⚡️ Введите новый РЕЙТИНГ (1-100):", parse_mode="Markdown")
     await state.set_state(AdminPanel.waiting_for_rating)
- 
+
 @dp.message(AdminPanel.waiting_for_rating)
 async def adm_process_rating(message: Message, state: FSMContext):
     data = await state.get_data()
@@ -968,7 +1029,7 @@ async def adm_process_rating(message: Message, state: FSMContext):
             await save_data(PLAYERS_FILE, players)
             await show_admin_user_profile(message, target_id)
     await state.clear()
- 
+
 # --- СТАРТ И СОЗДАНИЕ ---
 @dp.message(F.text == "/start")
 async def start_cmd(message: Message, state: FSMContext):
@@ -1023,14 +1084,14 @@ async def process_name(message: Message, state: FSMContext):
     ])
     await message.answer("🌍 **Выбери свою национальность (основные страны):**", reply_markup=kb, parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_nation)
- 
+
 @dp.callback_query(PlayerCreation.waiting_for_nation, F.data.startswith("nat:"))
 async def process_nation(callback: CallbackQuery, state: FSMContext):
     await state.update_data(nation=callback.data.split(":")[1])
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=pos, callback_data=f"pos:{POSITIONS[pos]}")] for pos in POSITIONS.keys()])
     await callback.message.edit_text("📋 **Выбери амплуа:**", reply_markup=kb, parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_position)
- 
+
 @dp.callback_query(PlayerCreation.waiting_for_position, F.data.startswith("pos:"))
 async def process_position(callback: CallbackQuery, state: FSMContext):
     await state.update_data(position=callback.data.split(":")[1])
@@ -1038,11 +1099,11 @@ async def process_position(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🇷🇺 Россия", callback_data="league:Россия"), InlineKeyboardButton(text="🇫🇷 Франция", callback_data="league:Франция")],
         [InlineKeyboardButton(text="🏴󠁧󠁢󠁥󠁮󠁧󠁿 Англия", callback_data="league:Англия"), InlineKeyboardButton(text="🇪🇸 Испания", callback_data="league:Испания")],
         [InlineKeyboardButton(text="🇮🇹 Италия", callback_data="league:Италия"), InlineKeyboardButton(text="🇩🇪 Германия", callback_data="league:Германия")],
-        [InlineKeyboardButton(text="🇵🇹 Португалия", callback_data="league:Португалия")]
+        [InlineKeyboardButton(text="🇵🇹 Португалия", callback_data="league:Португалия"), InlineKeyboardButton(text="🇳🇱 Нидерланды", callback_data="league:Нидерланды")]
     ])
     await callback.message.edit_text("🌍 **В какой стране начнешь карьеру?**", reply_markup=kb, parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_country_league)
- 
+
 @dp.callback_query(PlayerCreation.waiting_for_country_league, F.data.startswith("league:"))
 async def process_country_league(callback: CallbackQuery, state: FSMContext):
     league_country = callback.data.split(":")[1]
@@ -1053,12 +1114,13 @@ async def process_country_league(callback: CallbackQuery, state: FSMContext):
     elif league_country == "Германия": div = "Вторая Бундеслига"
     elif league_country == "Италия": div = "Серия Б"
     elif league_country == "Португалия": div = "Сегунда лига"
+    elif league_country == "Нидерланды": div = "Эрстедивизи"
     else: div = "ФНЛ 2"
     
     await state.update_data(start_division=div)
     await callback.message.edit_text("🔢 **Введи номер (1 - 99):**", parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_number)
- 
+
 @dp.message(PlayerCreation.waiting_for_number)
 async def process_number(message: Message, state: FSMContext):
     if not message.text.isdigit() or not (1 <= int(message.text) <= 99):
@@ -1072,7 +1134,7 @@ async def process_number(message: Message, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"🏢 {club}", callback_data=f"club:{club}")] for club in available_clubs])
     await message.answer(f"📉 Тобой интересуются клубы из лиги: **{start_div}**. Где начнешь?", reply_markup=kb, parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_club)
- 
+
 @dp.callback_query(PlayerCreation.waiting_for_club, F.data.startswith("club:"))
 @with_user_lock
 async def process_club(callback: CallbackQuery, state: FSMContext):
@@ -1125,7 +1187,7 @@ async def process_club(callback: CallbackQuery, state: FSMContext):
     
     await state.clear()
     await callback.message.edit_text(f"✍️ **КОНТРАКТ ПОДПИСАН!** Добро пожаловать в {player_profile['club']}!\n💰 Твоя зарплата: {player_profile['contract_salary']}$ за матч.", parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
- 
+
 @dp.callback_query(F.data == "start_new_career")
 @with_user_lock
 async def start_new_career_handler(callback: CallbackQuery, state: FSMContext):
@@ -1141,12 +1203,11 @@ async def start_new_career_handler(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text("⚽ **Добро пожаловать обратно! Начнем заново!**\nДля начала введи Имя и Фамилию:", parse_mode="Markdown")
     await state.set_state(PlayerCreation.waiting_for_name)
 
-# ===== НОВОЕ: Подтверждение удаления карьеры =====
+# ===== Подтверждение удаления карьеры =====
 @dp.callback_query(F.data == "delete_career")
 @with_user_lock
 async def delete_career_confirm(callback: CallbackQuery):
     user_id = await get_uid(callback)
-    # Показываем подтверждение
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Да, удалить", callback_data="delete_career_yes")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="back_to_menu")]
@@ -1166,7 +1227,6 @@ async def delete_career_final(callback: CallbackQuery):
         await save_data(PLAYERS_FILE, players)
     await callback.message.edit_text("🗑 **Карьера удалена!** Нажми /start, чтобы создать новую.", parse_mode="Markdown")
 
- 
 # --- ТРЕНИРОВКИ, ТАБЛИЦЫ, СЛУЖЕБНЫЕ МЕНЮ ---
 @dp.callback_query(F.data == "menu_train_choice")
 @with_user_lock
@@ -1201,7 +1261,7 @@ async def train_choice_handler(callback: CallbackQuery):
         await callback.message.answer("🏋️‍♂️ **ТРЕНИРОВКА**", reply_markup=kb, parse_mode="Markdown")
     else:
         await callback.message.edit_text("🏋️‍♂️ **ТРЕНИРОВКА**", reply_markup=kb, parse_mode="Markdown")
- 
+
 @dp.callback_query(F.data == "back_to_menu")
 async def back_to_menu_handler(callback: CallbackQuery):
     if callback.message.photo:
@@ -1209,7 +1269,7 @@ async def back_to_menu_handler(callback: CallbackQuery):
         await callback.message.answer("🏠 Главное меню.", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
     else:
         await callback.message.edit_text("🏠 Главное меню.", reply_markup=await main_menu_keyboard(callback.from_user.username, await get_uid(callback)))
- 
+
 @dp.callback_query(F.data.startswith("train:"))
 @with_user_lock
 async def train_execute_handler(callback: CallbackQuery):
@@ -1233,7 +1293,6 @@ async def train_execute_handler(callback: CallbackQuery):
         await callback.message.delete()
         return await callback.message.answer(text=f"🚑 **ОЙ!** На тренировке ты потянул мышцу. Выбыл на {p['injury_tours']} тур(а).", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_menu")]]))
     
-    # Расчет прогресса рейтинга (от -0.1 до +0.4)
     rating_gain = round(random.uniform(-0.1, 0.4), 1)
     p["rating"] = max(1.0, min(100.0, round(p.get("rating", 40.0) + rating_gain, 1)))
  
@@ -1245,7 +1304,7 @@ async def train_execute_handler(callback: CallbackQuery):
     msg_text = f"💪 **Тренировка завершена!**\n\n📈 **Прогресс:** Рейтинг {gain_str} | Усталость +10%\n⚡ Текущий рейтинг: **{p['rating']}**"
     
     await callback.message.answer(text=msg_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Меню", callback_data="back_to_menu")]]))
- 
+
 @dp.callback_query(F.data == "menu_table")
 @with_user_lock
 async def show_table_handler(callback: CallbackQuery):
@@ -1271,7 +1330,7 @@ async def show_table_handler(callback: CallbackQuery):
         await callback.message.answer(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
     else:
         await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
- 
+
 @dp.callback_query(F.data == "menu_profile")
 @with_user_lock
 async def profile_handler(callback: CallbackQuery):
@@ -1311,7 +1370,7 @@ async def profile_handler(callback: CallbackQuery):
         history_str = "\n\n📚 **Прошлые карьеры:**\n" + "\n\n".join(p["career_history"])
  
     season_display = min(p['season'], 13) 
-    tour_display = min(p['tour'], 15)
+    tour_display = min(p['tour'], 30)
  
     kb = await main_menu_keyboard(callback.from_user.username, user_id)
     kb.inline_keyboard.append([InlineKeyboardButton(text="🗑 Удалить карьеру", callback_data="delete_career")])
@@ -1327,7 +1386,7 @@ async def profile_handler(callback: CallbackQuery):
         f"📊 Статус: {get_status_by_trust(p['trust'])}\n"
         f"🔋 Усталость: {p.get('fatigue', 0)}%\n"
         f"💍 Девушка: {p.get('girlfriend', 'Нет')}\n"
-        f"🏟️ Сезон: {season_display}/13 | Тур Лиги: {tour_display}/15\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"🏟️ Сезон: {season_display}/13 | Тур Лиги: {tour_display}/30\n━━━━━━━━━━━━━━━━━━━━\n"
         f"🏆 **Текущая карьера (за сезон):**\n{stats_text}\n"
         f"📈 **Общая статистика (текущий игрок):**\nВсего игр: {p.get('stats_total', {}).get('games', 0)} | Голов: {p.get('stats_total', {}).get('goals', 0)} | Ассистов: {p.get('stats_total', {}).get('assists', 0)}"
         f"{history_str}"
@@ -1337,7 +1396,7 @@ async def profile_handler(callback: CallbackQuery):
         await callback.message.answer(text, reply_markup=kb)
     else:
         await callback.message.edit_text(text, reply_markup=kb)
- 
+
 # --- ОБРАБОТКА ВЫБОРА КЛУБА ПОСЛЕ СКАНДАЛА ИЛИ УХОДА ---
 @dp.callback_query(F.data.startswith("scandal_club:"))
 @with_user_lock
@@ -1358,7 +1417,8 @@ async def scandal_club_choice_handler(callback: CallbackQuery):
         "ФНЛ": 6000, "Лига 2": 6000, "Чемпионшип": 8000, "Сегунда": 8000, "Серия Б": 8000, "Вторая Бундеслига": 7500,
         "РПЛ": 30000, "Лига 1": 30000, "АПЛ": 50000, "Ла Лига": 50000, "Серия А": 45000, "Бундеслига": 48000,
         "Примейра": 35000, "Сегунда лига": 7500,
-        "Бразильская Серия А": 30000  # добавлено
+        "Бразильская Серия А": 30000,
+        "Эрстедивизи": 7500, "Эредивизи": 35000
     }
     p["contract_salary"] = int(base_salaries.get(p["division"], 1500) * (p["rating"] / 45))
     
@@ -1376,12 +1436,11 @@ async def scandal_club_choice_handler(callback: CallbackQuery):
         text=f"✍️ Ты успешно перешел в **{new_club}**!\n💵 Твоя новая зарплата: **{p['contract_salary']}$/матч**.\nПора доказывать фанатам свою преданность!",
         parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id)
     )
- 
+
 # --- МАТЧИ И СИМУЛЯЦИЯ МОМЕНТОВ ---
 @dp.callback_query(F.data == "menu_match")
 @with_user_lock
 async def match_handler(callback: CallbackQuery, state: FSMContext):
-    # Обязательная проверка подписки перед матчем
     if not await check_sub(callback.from_user.id):
         return await callback.message.answer("❗️ **Для игры необходимо подписаться на нашего спонсора!**\nСначала подпишитесь, а затем продолжите игру.", reply_markup=sub_keyboard(), parse_mode="Markdown")
 
@@ -1394,7 +1453,6 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
     if p.get("fatigue", 0) >= 95:
         return await callback.answer("🚫 Ты смертельно устал! Сходи в ресторан.", show_alert=True)
         
-    # --- ОБРАБОТКА ТРАВМЫ ---
     if p.get("injury_tours", 0) > 0:
         p["injury_tours"] -= 1
         if p["injury_tours"] == 0:
@@ -1436,7 +1494,6 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
         else:
             return await callback.message.edit_text(msg, parse_mode="Markdown", reply_markup=await main_menu_keyboard(callback.from_user.username, user_id))
     
-    # --- СИСТЕМА ДИНАМИЧЕСКИХ ПЕРЕХОДОВ В БУНДЕСЛИГУ, ПРИМЕЙРУ И БРАЗИЛИЮ ---
     current_rating = p.get("rating", 40)
     
     # Предложения из Германии
@@ -1485,7 +1542,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
                 reply_markup=kb, parse_mode="Markdown"
             )
 
-    # ===== НОВОЕ: Предложения из Бразилии =====
+    # Предложения из Бразилии
     if p["division"] not in ["Бразильская Серия А"] and random.random() < 0.15:
         if current_rating >= 74:
             br_offers = random.sample(CLUBS["Бразильская Серия А"], 2)
@@ -1497,17 +1554,38 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
                 text=f"📈 **ТРАНСФЕРНОЕ ПРЕДЛОЖЕНИЕ!** Твой высокий рейтинг ({current_rating}) привлек внимание клубов из Бразилии! Тебе предлагают контракт в **Бразильской Серии А**:",
                 reply_markup=kb, parse_mode="Markdown"
             )
-        # Для Бразилии нет второго дивизиона, поэтому только при >=74
 
-    if p["tour"] > 15:
+    # Предложения из Нидерландов
+    if p["division"] not in ["Эредивизи", "Эрстедивизи"] and random.random() < 0.15:
+        if current_rating >= 74:
+            nl_offers = random.sample(CLUBS["Эредивизи"], 2)
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=f"🇳🇱 {c}", callback_data=f"scandal_club:{c}")] for c in nl_offers
+            ] + [[InlineKeyboardButton(text="❌ Отклонить предложение", callback_data="back_to_menu")]])
+            await callback.message.delete()
+            return await callback.message.answer(
+                text=f"📈 **ТРАНСФЕРНОЕ ПРЕДЛОЖЕНИЕ!** Твой высокий рейтинг ({current_rating}) привлек внимание клубов из Нидерландов! Тебе предлагают контракт в **Эредивизи**:",
+                reply_markup=kb, parse_mode="Markdown"
+            )
+        elif current_rating >= 55:
+            nl_offers = random.sample(CLUBS["Эрстедивизи"], 2)
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=f"🇳🇱 {c}", callback_data=f"scandal_club:{c}")] for c in nl_offers
+            ] + [[InlineKeyboardButton(text="❌ Отклонить предложение", callback_data="back_to_menu")]])
+            await callback.message.delete()
+            return await callback.message.answer(
+                text=f"📈 **ТРАНСФЕРНОЕ ПРЕДЛОЖЕНИЕ!** На основе твоего рейтинга ({current_rating}) команды из Нидерландов предлагают тебе контракт в **Эрстедивизи**:",
+                reply_markup=kb, parse_mode="Markdown"
+            )
+
+    if p["tour"] > 30:
         return await season_results_handler(callback)
     
-    # --- КЛУБНЫЙ МАТЧ ---
     if random.random() < 0.01:
         div_clubs = [c for c in CLUBS[p["division"]] if c != p["club"]]
         available_clubs = random.sample(div_clubs, min(len(div_clubs), 2))
         
-        top_leagues = ["РПЛ", "Лига 1", "АПЛ", "Ла Лига", "Серия А", "Бундеслига", "Примейра", "Бразильская Серия А"]
+        top_leagues = ["РПЛ", "Лига 1", "АПЛ", "Ла Лига", "Серия А", "Бундеслига", "Примейра", "Бразильская Серия А", "Эредивизи"]
         my_top_league = "РПЛ"
         if p["division"] in ["Насьональ", "Лига 2", "Лига 1"]: my_top_league = "Лига 1"
         elif p["division"] in ["Первая лига Англии", "Чемпионшип", "АПЛ"]: my_top_league = "АПЛ"
@@ -1516,6 +1594,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
         elif p["division"] in ["Вторая Бундеслига", "Бундеслига"]: my_top_league = "Бундеслига"
         elif p["division"] in ["Сегунда лига", "Примейра"]: my_top_league = "Примейра"
         elif p["division"] in ["Бразильская Серия А"]: my_top_league = "Бразильская Серия А"
+        elif p["division"] in ["Эрстедивизи", "Эредивизи"]: my_top_league = "Эредивизи"
         
         alt_leagues = [l for l in top_leagues if l != my_top_league]
         alt_league = random.choice(alt_leagues) if alt_leagues else "РПЛ"
@@ -1546,6 +1625,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
         elif p["division"] in ["Вторая Бундеслига", "Бундеслига"]: country_leagues = ["Вторая Бундеслига", "Бундеслига"]
         elif p["division"] in ["Сегунда лига", "Примейра"]: country_leagues = ["Сегунда лига", "Примейра"]
         elif p["division"] in ["Бразильская Серия А"]: country_leagues = ["Бразильская Серия А"]
+        elif p["division"] in ["Эрстедивизи", "Эредивизи"]: country_leagues = ["Эрстедивизи", "Эредивизи"]
         
         rival_pool = []
         for l in country_leagues:
@@ -1579,7 +1659,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
     await state.update_data(match=match_data)
     
     match_title = f"🏆 НАЦИОНАЛЬНЫЙ КУБОК ({cup_stg}) 🏆" if is_cup_match else f"🏟️ РЕГУЛЯРНЫЙ ЧЕМПИОНАТ ({p['division']})"
-    intro_text = ""  # удалено событие
+    intro_text = ""
     
     if callback.message.photo: await callback.message.delete()
     
@@ -1587,7 +1667,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
     await asyncio.sleep(2)
     await msg.delete()
     await generate_moment(callback, state, user_id)
- 
+
 async def generate_moment(callback: CallbackQuery, state: FSMContext, user_id: str):
     data = await state.get_data()
     if "match" not in data:
@@ -1684,7 +1764,7 @@ async def generate_moment(callback: CallbackQuery, state: FSMContext, user_id: s
         await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
     except:
         await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
- 
+
 @dp.callback_query(F.data.startswith("gk_act:"))
 @with_user_lock
 async def gk_action_handler(callback: CallbackQuery, state: FSMContext):
@@ -1718,7 +1798,7 @@ async def gk_action_handler(callback: CallbackQuery, state: FSMContext):
     m["current_moment"] += 1
     await state.update_data(match=m)
     await generate_moment(callback, state, user_id)
- 
+
 @dp.callback_query(F.data.startswith("cb_act:"))
 @with_user_lock
 async def cb_action_handler(callback: CallbackQuery, state: FSMContext):
@@ -1755,7 +1835,7 @@ async def cb_action_handler(callback: CallbackQuery, state: FSMContext):
     m["current_moment"] += 1
     await state.update_data(match=m)
     await generate_moment(callback, state, user_id)
- 
+
 @dp.callback_query(F.data == "act:shoot_menu")
 @with_user_lock
 async def act_shoot_menu_handler(callback: CallbackQuery, state: FSMContext):
@@ -1765,13 +1845,12 @@ async def act_shoot_menu_handler(callback: CallbackQuery, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📐 Левый верхний (Девятка)", callback_data="shoot_dir:в левую девятку"), InlineKeyboardButton(text="📐 Правый верхний (Девятка)", callback_data="shoot_dir:в правую девятку")],
         [InlineKeyboardButton(text="👇 Левый нижний", callback_data="shoot_dir:низом в левый угол"), InlineKeyboardButton(text="👇 Правый нижний", callback_data="shoot_dir:низом в правый угол")]
-
     ])
     try:
         await callback.message.edit_reply_markup(reply_markup=kb)
     except Exception:
         pass
- 
+
 @dp.callback_query(F.data.startswith("shoot_dir:"))
 @with_user_lock
 async def act_shoot_execute_handler(callback: CallbackQuery, state: FSMContext):
@@ -1799,7 +1878,6 @@ async def act_shoot_execute_handler(callback: CallbackQuery, state: FSMContext):
     
     if random.random() < score_chance:
         m["goals"] += 1; m["my_team_score"] += 1
-        # Показываем анимацию гола через edit_text чтобы не потерять сообщение
         try:
             await callback.message.edit_text(
                 f"⚽ **{m['minute']}'** | ГОЛ! Твой шикарный удар {target_dir} разрывает сетку ворот!",
@@ -1818,7 +1896,7 @@ async def act_shoot_execute_handler(callback: CallbackQuery, state: FSMContext):
     m["current_moment"] += 1
     await state.update_data(match=m)
     await generate_moment(callback, state, user_id)
- 
+
 @dp.callback_query(F.data == "act:pass")
 @with_user_lock
 async def act_pass_handler(callback: CallbackQuery, state: FSMContext):
@@ -1844,7 +1922,6 @@ async def act_pass_handler(callback: CallbackQuery, state: FSMContext):
     await state.update_data(match=m)
     await generate_moment(callback, state, user_id)
 
-# --- ЗАВЕРШЕНИЕ МАТЧА, СЕРИЯ ПЕНАЛЬТИ И ИТОГИ СЕЗОНА ---
 async def _clear_match_state(state: FSMContext):
     data = await state.get_data()
     data.pop("match", None)
@@ -1916,7 +1993,6 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
         outcome_text = "❌ **ПОРАЖЕНИЕ**"
         p["trust"] = max(0, p.get("trust", 0) - 4)
 
-    # --- Начисление личной статистики ---
     p.setdefault("stats_season", {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0})
     p.setdefault("stats_total", {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0})
     for stat in ("goals", "assists", "saves", "tackles"):
@@ -1924,7 +2000,6 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
         p["stats_total"][stat] = p["stats_total"].get(stat, 0) + m.get(stat, 0)
     p["stats_total"]["games"] = p["stats_total"].get("games", 0) + 1
 
-    # --- Изменение рейтинга x1.5 ---
     goals   = m.get("goals", 0)
     assists = m.get("assists", 0)
     saves   = m.get("saves", 0)
@@ -1938,7 +2013,6 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
     rating_delta = round(raw * 0.15, 2)
     p["rating"] = round(max(1.0, min(100.0, p.get("rating", 40.0) + rating_delta)), 2)
 
-    # --- Доход: зарплата + спонсор ---
     money_gain = p.get("contract_salary", 1500)
     sponsor_income = 0
     sp_name = p.get("sponsor")
@@ -1988,8 +2062,6 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
     sponsor_line = (f"💼 Доход от {p.get('sponsor')}: +{sponsor_income}$\n"
                     if sponsor_income else "")
 
-    # ===== УПРОЩЁННАЯ И ЩЕДРАЯ ОЦЕНКА ЗА МАТЧ =====
-    # Базовая 5.0, +1.0 за гол, +0.8 за ассист, +0.5 за сейв/отбор, +1.0 за победу, +0.5 за ничью, -0.3 за пропущенный.
     rating_performance = 5.0
     rating_performance += goals * 1.0
     rating_performance += assists * 0.8
@@ -2024,7 +2096,6 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
             await callback.message.delete()
         await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
 
-    # ===== НОВОЕ: интервью при оценке ≥ 9.0 =====
     if rating_performance >= 9.0:
         await start_interview(callback, state, user_id, p)
 
@@ -2072,7 +2143,6 @@ def _pick_offers_by_rating(rating: float, current_club: str, current_division: s
 
     return offers
 
-# ===== НОВОЕ: функция запуска интервью после матча =====
 async def start_interview(callback: CallbackQuery, state: FSMContext, user_id: str, p: dict):
     questions = [
         {
@@ -2098,14 +2168,12 @@ async def start_interview(callback: CallbackQuery, state: FSMContext, user_id: s
         }
     ]
 
-    # Сохраняем интервью в FSM
     await state.set_state(InterviewState.waiting_for_answer)
     await state.update_data(interview={
         "questions": questions,
         "trust_gain": 0
     })
 
-    # Отправляем первый вопрос
     q0 = questions[0]
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=q0["a"], callback_data="interview:0:a")],
@@ -2117,7 +2185,6 @@ async def start_interview(callback: CallbackQuery, state: FSMContext, user_id: s
         f"**Вопрос 1/3:**\n_{q0['question']}_",
         parse_mode="Markdown", reply_markup=kb
     )
-
 
 async def season_results_handler(callback: CallbackQuery):
     user_id = await get_uid(callback)
@@ -2210,7 +2277,7 @@ async def season_results_handler(callback: CallbackQuery):
 
     p["_season_offers"] = offers
     p["_season_num"]    = season_num
-    p["_season_forced_div"] = forced_div # Запоминаем дивизион для продления контракта
+    p["_season_forced_div"] = forced_div
     p["_season_result_text"] = result_text
     p["_season_stats_text"]  = stats_text
     players[user_id] = p
@@ -2247,7 +2314,6 @@ async def season_results_handler(callback: CallbackQuery):
         await callback.message.answer(text, parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
-
 def _apply_new_season_reset(p: dict):
     p["season"]   = p.get("_season_num", p.get("season", 1)) + 1
     p["tour"]     = 1
@@ -2260,7 +2326,6 @@ def _apply_new_season_reset(p: dict):
     p["fatigue"]    = max(0, p.get("fatigue", 0) - 30)
     for key in ("_season_offers", "_season_num", "_season_result_text", "_season_stats_text", "_season_forced_div"):
         p.pop(key, None)
-
 
 @dp.callback_query(F.data.startswith("season_choice:"))
 @with_user_lock
@@ -2280,7 +2345,6 @@ async def season_choice_handler(callback: CallbackQuery):
         old_salary = p.get("contract_salary", 1500)
         p["contract_salary"] = max(old_salary, int(old_salary * 1.15))
         
-        # Исправление бага с повышением: обновляем дивизион клуба, если он поменялся
         if forced_div:
             p["division"] = forced_div
             club_line = f"🔄 Ты продлил контракт с **{p['club']}**!\n📈 Твоя команда переходит в **{forced_div}**!\n💰 Новая зарплата: **{p['contract_salary']}$/матч**"
@@ -2304,7 +2368,6 @@ async def season_choice_handler(callback: CallbackQuery):
     _apply_new_season_reset(p)
     players[user_id] = p
     await save_data(PLAYERS_FILE, players)
-    # Генерируем новую таблицу, с учетом возможного нового дивизиона
     await init_tables_for_user(user_id, p["division"], p["club"])
 
     text = (
@@ -2324,7 +2387,6 @@ async def season_choice_handler(callback: CallbackQuery):
 # --- ЗАПУСК БОТА ---
 async def main():
     print("Бот запущен и ожидает сообщений...")
-    # Удаляем вебхук перед запуском polling (исправляет ошибку TelegramConflictError)
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
