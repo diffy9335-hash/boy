@@ -14,7 +14,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 # --- НАСТРОЙКА ЛОГОВ И ТОКЕНА ---
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8494602735:AAFaDVdnMPb04VMF0NAr9VUT9g2n67nvE8g"
+BOT_TOKEN = "8494602735:AAG18JeM-KXf54VAYB5Z4o3-nOYEUnkABl0"
 
 # Канал спонсора
 SPONSOR_CHANNEL_ID = "@jdoauqh"
