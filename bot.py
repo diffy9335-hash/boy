@@ -370,23 +370,23 @@ POSITIONS = {
     "🧤 Вратарь": "GK"
 }
 
-# --- КВЕСТЫ (ДОСТИЖЕНИЯ) ---
+# --- КВЕСТЫ (ДОСТИЖЕНИЯ) - УМЕНЬШЕНЫ НАГРАДЫ ---
 QUESTS_DATA = {
-    "q1": {"name": "Первая кровь", "desc": "Забить 1 гол", "reward": 0.1, "type": "goals", "target": 1},
-    "q2": {"name": "Бомбардир", "desc": "Забить 10 голов", "reward": 0.2, "type": "goals", "target": 10},
-    "q3": {"name": "Снайпер", "desc": "Забить 50 голов", "reward": 0.5, "type": "goals", "target": 50},
-    "q4": {"name": "Легендарный голеадор", "desc": "Забить 100 голов", "reward": 1.0, "type": "goals", "target": 100},
-    "q5": {"name": "Первый ассист", "desc": "Отдать 1 голевой пас", "reward": 0.1, "type": "assists", "target": 1},
-    "q6": {"name": "Командный игрок", "desc": "Отдать 20 ассистов", "reward": 0.3, "type": "assists", "target": 20},
-    "q7": {"name": "Маэстро паса", "desc": "Отдать 50 ассистов", "reward": 0.6, "type": "assists", "target": 50},
-    "q8": {"name": "Надежный щит", "desc": "10 отборов/сейвов", "reward": 0.2, "type": "def", "target": 10},
-    "q9": {"name": "Министр обороны", "desc": "50 отборов/сейвов", "reward": 0.5, "type": "def", "target": 50},
-    "q10": {"name": "Стена", "desc": "150 отборов/сейвов", "reward": 1.0, "type": "def", "target": 150},
-    "q11": {"name": "Вкус победы", "desc": "Выиграть 1 трофей", "reward": 0.3, "type": "trophies", "target": 1},
-    "q12": {"name": "Коллекционер", "desc": "Выиграть 3 трофея", "reward": 0.8, "type": "trophies", "target": 3},
-    "q13": {"name": "Опытный", "desc": "Сыграть 50 матчей", "reward": 0.3, "type": "games", "target": 50},
-    "q14": {"name": "Ветеран", "desc": "Сыграть 150 матчей", "reward": 0.8, "type": "games", "target": 150},
-    "q15": {"name": "Миллионер", "desc": "Накопить 1,000,000$", "reward": 1.0, "type": "money", "target": 1000000}
+    "q1": {"name": "Первая кровь", "desc": "Забить 1 гол", "reward": 0.05, "type": "goals", "target": 1},
+    "q2": {"name": "Бомбардир", "desc": "Забить 10 голов", "reward": 0.08, "type": "goals", "target": 10},
+    "q3": {"name": "Снайпер", "desc": "Забить 50 голов", "reward": 0.15, "type": "goals", "target": 50},
+    "q4": {"name": "Легендарный голеадор", "desc": "Забить 100 голов", "reward": 0.3, "type": "goals", "target": 100},
+    "q5": {"name": "Первый ассист", "desc": "Отдать 1 голевой пас", "reward": 0.05, "type": "assists", "target": 1},
+    "q6": {"name": "Командный игрок", "desc": "Отдать 20 ассистов", "reward": 0.08, "type": "assists", "target": 20},
+    "q7": {"name": "Маэстро паса", "desc": "Отдать 50 ассистов", "reward": 0.15, "type": "assists", "target": 50},
+    "q8": {"name": "Надежный щит", "desc": "10 отборов/сейвов", "reward": 0.05, "type": "def", "target": 10},
+    "q9": {"name": "Министр обороны", "desc": "50 отборов/сейвов", "reward": 0.15, "type": "def", "target": 50},
+    "q10": {"name": "Стена", "desc": "150 отборов/сейвов", "reward": 0.3, "type": "def", "target": 150},
+    "q11": {"name": "Вкус победы", "desc": "Выиграть 1 трофей", "reward": 0.1, "type": "trophies", "target": 1},
+    "q12": {"name": "Коллекционер", "desc": "Выиграть 3 трофея", "reward": 0.25, "type": "trophies", "target": 3},
+    "q13": {"name": "Опытный", "desc": "Сыграть 50 матчей", "reward": 0.1, "type": "games", "target": 50},
+    "q14": {"name": "Ветеран", "desc": "Сыграть 150 матчей", "reward": 0.25, "type": "games", "target": 150},
+    "q15": {"name": "Миллионер", "desc": "Накопить 1,000,000$", "reward": 0.3, "type": "money", "target": 1000000}
 }
 
 def get_quest_progress(p, q_type):
@@ -575,49 +575,48 @@ async def simulate_background_division(user_id, division):
         tables[user_id][division] = sorted(table, key=lambda x: x["points"], reverse=True)
         await save_data(TABLES_FILE, tables)
 
-# ========== НОВАЯ СИСТЕМА ТРЕНИРОВОК ==========
+# ========== НОВАЯ СИСТЕМА ТРЕНИРОВОК (УМЕНЬШЕННЫЙ ПРИРОСТ) ==========
 
-# Конфиг тренировок для каждой позиции
+# Конфиг тренировок для каждой позиции - УМЕНЬШЕН ПРИРОСТ
 TRAINING_CONFIG = {
     "ST": {
-        "tech": {"name": "Дриблинг", "base_gain": 0.1, "fatigue": 15},
-        "phys": {"name": "Скорость", "base_gain": 0.1, "fatigue": 15},
-        "special": {"name": "Завершение", "base_gain": 0.15, "fatigue": 18}
+        "tech": {"name": "Дриблинг", "base_gain": 0.05, "fatigue": 15},
+        "phys": {"name": "Скорость", "base_gain": 0.05, "fatigue": 15},
+        "special": {"name": "Завершение", "base_gain": 0.08, "fatigue": 18}
     },
     "CM": {
-        "tech": {"name": "Пас", "base_gain": 0.1, "fatigue": 15},
-        "phys": {"name": "Выносливость", "base_gain": 0.1, "fatigue": 15},
-        "special": {"name": "Видение поля", "base_gain": 0.15, "fatigue": 18}
+        "tech": {"name": "Пас", "base_gain": 0.05, "fatigue": 15},
+        "phys": {"name": "Выносливость", "base_gain": 0.05, "fatigue": 15},
+        "special": {"name": "Видение поля", "base_gain": 0.08, "fatigue": 18}
     },
     "CB": {
-        "tech": {"name": "Отбор", "base_gain": 0.1, "fatigue": 15},
-        "phys": {"name": "Сила", "base_gain": 0.1, "fatigue": 15},
-        "special": {"name": "Позиция", "base_gain": 0.15, "fatigue": 18}
+        "tech": {"name": "Отбор", "base_gain": 0.05, "fatigue": 15},
+        "phys": {"name": "Сила", "base_gain": 0.05, "fatigue": 15},
+        "special": {"name": "Позиция", "base_gain": 0.08, "fatigue": 18}
     },
     "GK": {
-        "tech": {"name": "Реакция", "base_gain": 0.1, "fatigue": 15},
-        "phys": {"name": "Прыжок", "base_gain": 0.1, "fatigue": 15},
-        "special": {"name": "Игра ногами", "base_gain": 0.15, "fatigue": 18}
+        "tech": {"name": "Реакция", "base_gain": 0.05, "fatigue": 15},
+        "phys": {"name": "Прыжок", "base_gain": 0.05, "fatigue": 15},
+        "special": {"name": "Игра ногами", "base_gain": 0.08, "fatigue": 18}
     }
 }
 
-# Бонусы за серию тренировок
+# Бонусы за серию тренировок - УМЕНЬШЕНЫ
 STREAK_BONUSES = {
-    3: 0.2,
-    5: 0.4,
-    10: 0.8,
-    15: 1.2,
-    20: 1.5
+    5: 0.1,
+    10: 0.2,
+    15: 0.3,
+    20: 0.5
 }
 
-# Достижения за тренировки
+# Достижения за тренировки - УМЕНЬШЕНЫ
 TRAIN_ACHIEVEMENTS = {
-    "train_25": {"name": "🏅 Трудяга", "desc": "25 тренировок", "reward": 0.3},
-    "train_50": {"name": "🏅 Профи", "desc": "50 тренировок", "reward": 0.5},
-    "train_100": {"name": "🏅 Легенда тренировок", "desc": "100 тренировок", "reward": 0.8},
-    "streak_5": {"name": "🔥 Дисциплина", "desc": "5 тренировок подряд", "reward": 0.3},
-    "streak_10": {"name": "🔥 Железная воля", "desc": "10 тренировок подряд", "reward": 0.5},
-    "streak_20": {"name": "🔥 Монах", "desc": "20 тренировок подряд", "reward": 0.8},
+    "train_25": {"name": "🏅 Трудяга", "desc": "25 тренировок", "reward": 0.1},
+    "train_50": {"name": "🏅 Профи", "desc": "50 тренировок", "reward": 0.2},
+    "train_100": {"name": "🏅 Легенда тренировок", "desc": "100 тренировок", "reward": 0.3},
+    "streak_5": {"name": "🔥 Дисциплина", "desc": "5 тренировок подряд", "reward": 0.1},
+    "streak_10": {"name": "🔥 Железная воля", "desc": "10 тренировок подряд", "reward": 0.2},
+    "streak_20": {"name": "🔥 Монах", "desc": "20 тренировок подряд", "reward": 0.3},
 }
 
 def get_train_cost(rating: float) -> int:
@@ -1408,7 +1407,8 @@ async def process_club(callback: CallbackQuery, state: FSMContext):
         "car": None,
         "has_yoga_bonus": False,
         "last_interview_tour": 0,
-        "rating_performance": 0
+        "rating_performance": 0,
+        "age_penalty_applied": False
     }
     
     players = await load_data(PLAYERS_FILE)
@@ -1868,7 +1868,7 @@ async def scandal_club_choice_handler(callback: CallbackQuery):
     )
 
 # ============================================================
-# ИСПРАВЛЕННЫЙ ОБРАБОТЧИК МАТЧА (С СБРОСОМ СЕРИИ И ПРОВЕРКОЙ СТАТУСА)
+# ИСПРАВЛЕННЫЙ ОБРАБОТЧИК МАТЧА (С УМЕНЬШЕННЫМ ПРИРОСТОМ)
 # ============================================================
 
 @dp.callback_query(F.data == "menu_match")
@@ -1901,13 +1901,11 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
     
     # Если игрок в резерве (trust < 21) → НЕ ИГРАЕТ
     if trust < 21:
-        # Пропускаем матч, но даем уведомление
         p["tour"] += 1
         p["money"] = p.get("money", 0) + p.get("contract_salary", 1500)
         p["train_done"] = False
         p["fatigue"] = max(0, p.get("fatigue", 0) - 10)
         
-        # Симулируем матч без участия игрока
         played_rivals = p.get("played_league_rivals", [])
         rival_pool = [c for c in CLUBS[p["division"]] if c != p["club"] and c not in played_rivals]
         if not rival_pool:
@@ -1988,7 +1986,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
     
     # ========== ЕСЛИ ИГРОК НА ЗАМЕНЕ (21-50) ==========
     if trust < 51:
-        total_moments = random.randint(1, 2)  # Меньше моментов
+        total_moments = random.randint(1, 2)
         await callback.message.answer(
             f"🔄 **ТЫ НА ЗАМЕНЕ!**\n"
             f"Ты выйдешь на поле во втором тайме.\n"
@@ -1997,7 +1995,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
             parse_mode="Markdown"
         )
     else:
-        total_moments = random.randint(2, 4)  # Полноценный матч
+        total_moments = random.randint(2, 4)
     # ==========================================
     
     # Предложения из Германии
@@ -2213,7 +2211,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
         
     match_data = {
         "rival": random.choice(rival_pool),
-        "total_moments": total_moments,  # Используем количество моментов в зависимости от статуса
+        "total_moments": total_moments,
         "current_moment": 1,
         "minute": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0, "yellow_cards": 0,
         "my_team_score": 0, "rival_team_score": 0,
@@ -2233,7 +2231,7 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
     await generate_moment(callback, state, user_id)
 
 # ============================================================
-# ФУНКЦИИ МАТЧА (generate_moment, gk_action_handler, cb_action_handler, act_shoot_menu_handler, act_shoot_execute_handler, act_pass_handler, start_penalty_shootout, finish_match, season_results_handler, _apply_new_season_reset, season_choice_handler)
+# ФУНКЦИИ МАТЧА (С УМЕНЬШЕННЫМ ПРИРОСТОМ)
 # ============================================================
 
 async def generate_moment(callback: CallbackQuery, state: FSMContext, user_id: str):
@@ -2578,7 +2576,11 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
            - conceded * 0.10
            + (0.20 if outcome == "win" else (-0.15 if outcome == "loss" else 0.0)))
     raw = max(-1.0, min(1.0, raw))
-    rating_delta = round(raw * 0.15, 2)
+    
+    # ========== УМЕНЬШЕННЫЙ ПРИРОСТ ЗА МАТЧ ==========
+    rating_delta = round(raw * 0.06, 2)  # Было 0.15, стало 0.06
+    # =================================================
+
     p["rating"] = round(max(1.0, min(100.0, p.get("rating", 40.0) + rating_delta)), 2)
 
     money_gain = p.get("contract_salary", 1500)
@@ -2600,7 +2602,9 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
             if idx == len(stages) - 1:
                 p["trophies"] = p.get("trophies", []) + [f"🏆 Кубок сезона {p.get('season', 1)}"]
                 p["money"] += 100000
-                p["rating"] = max(1.0, min(100.0, round(p["rating"] + 2, 1)))
+                # ========== УМЕНЬШЕННЫЙ ПРИРОСТ ЗА ТРОФЕЙ ==========
+                p["rating"] = max(1.0, min(100.0, round(p["rating"] + 0.5, 1)))  # Было +2
+                # =====================================================
                 p["cup_out"] = True
                 cup_summary = "\n\n🏆 **ТЫ ВЫИГРАЛ НАЦИОНАЛЬНЫЙ КУБОК!!!** 🎉"
             else:
@@ -2617,6 +2621,16 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
             parent_div = get_division(p["parent_club"])
             if parent_div != p["division"]:
                 await simulate_background_division(user_id, parent_div)
+
+    # ========== ШТРАФ ЗА ВОЗРАСТ ==========
+    age = p.get("age", 17)
+    if age >= 36:
+        p["rating"] = max(1.0, round(p["rating"] - 0.3, 1))
+    elif age >= 33:
+        p["rating"] = max(1.0, round(p["rating"] - 0.2, 1))
+    elif age >= 30:
+        p["rating"] = max(1.0, round(p["rating"] - 0.1, 1))
+    # ======================================
 
     players[user_id] = p
     await save_data(PLAYERS_FILE, players)
@@ -2967,6 +2981,7 @@ async def main():
     print("📌 Новая система тренировок: выбор направления, серии, достижения!")
     print("📌 Исправлен статус игрока - теперь влияет на игровое время!")
     print("📌 Исправлен баг: серия тренировок сбрасывается, если не тренироваться после матча!")
+    print("📌 УМЕНЬШЕН ПРИРОСТ РЕЙТИНГА: тренировки 0.05/0.08, матчи ×0.06, штраф за возраст!")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
