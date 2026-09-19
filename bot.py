@@ -14,7 +14,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.exceptions import TelegramBadRequest
 
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8494602735:AAEaMU1BHsR-7EzBoiVZOo9KX7bwJYHOp20"
+BOT_TOKEN = "8979310355:AAGPshB3WEGHVx33ZPjd9uIxQpY8wrGmy_8"
 
 SPONSOR_CHANNEL_ID = "@jdoauqh"
 SPONSOR_CHANNEL_URL = "https://t.me/jdoauqh"
@@ -431,6 +431,49 @@ async def init_tables_for_user(user_id, division, player_club=None):
         tables = await load_data(TABLES_FILE)
         _init_tables_internal(tables, user_id, division, player_club)
         await save_data(TABLES_FILE, tables)
+
+
+
+
+async def simulate_table_until_tour(user_id, division, player_club, current_tour):
+    """
+    Создаёт таблицу и симулирует все туры до current_tour.
+    Используется при переходе в новый клуб посреди сезона.
+    """
+    await init_tables_for_user(user_id, division, player_club)
+
+    tables = await load_data(TABLES_FILE)
+    table = tables[user_id][division]
+
+    clubs = [row["club"] for row in table]
+
+    for tour in range(1, current_tour):
+        random.shuffle(clubs)
+
+        for i in range(0, len(clubs) - 1, 2):
+            c1_club = clubs[i]
+            c2_club = clubs[i + 1]
+
+            r1 = CLUB_RATINGS.get(c1_club, 50)
+            r2 = CLUB_RATINGS.get(c2_club, 50)
+
+            chance_w1 = 0.35 + ((r1 - r2) * 0.01)
+            chance_w2 = 0.35 + ((r2 - r1) * 0.01)
+            rand = random.random()
+
+            c1 = next(r for r in table if r["club"] == c1_club)
+            c2 = next(r for r in table if r["club"] == c2_club)
+
+            if rand < chance_w1:
+                c1["points"] += 3; c1["wins"] += 1; c2["losses"] += 1
+            elif rand < chance_w1 + chance_w2:
+                c2["points"] += 3; c2["wins"] += 1; c1["losses"] += 1
+            else:
+                c1["points"] += 1; c1["draws"] += 1
+                c2["points"] += 1; c2["draws"] += 1
+
+    tables[user_id][division] = sorted(table, key=lambda x: x["points"], reverse=True)
+    await save_data(TABLES_FILE, tables)
 
 
 async def simulate_table_tour(user_id, division, player_club, player_match_rival, player_match_outcome):
@@ -4848,7 +4891,11 @@ async def scandal_club_choice_handler(callback: CallbackQuery):
 
     players[user_id] = p
     await save_data(PLAYERS_FILE, players)
-    await init_tables_for_user(user_id, p["division"], p["club"])
+
+    if p.get("tour", 1) <= 1:
+        await init_tables_for_user(user_id, p["division"], p["club"])
+    else:
+        await simulate_table_until_tour(user_id, p["division"], p["club"], p["tour"])
 
     euro_data = await load_data(EURO_FILE)
     if euro_data and euro_data.get("status") == "group":
