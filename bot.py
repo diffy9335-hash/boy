@@ -4995,7 +4995,16 @@ async def delete_career_confirm(callback: CallbackQuery):
         [InlineKeyboardButton(text="✅ Да", callback_data="delete_career_yes")],
         [InlineKeyboardButton(text="❌ Нет", callback_data="back_to_menu")]
     ])
-    await callback.message.edit_text("🗑 Удалить карьеру?", reply_markup=kb, parse_mode="Markdown")
+    text = "🗑 Удалить карьеру?\nЭто действие необратимо!"
+    if callback.message.photo:
+        await callback.message.delete()
+        await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    else:
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await callback.message.delete()
+            await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 
 @dp.callback_query(F.data == "delete_career_yes")
