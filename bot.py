@@ -6,22 +6,17 @@ import random
 import json
 import os
 import time
-from io import BytesIO
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import (
-    Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    InputMediaPhoto, BufferedInputFile
-)
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.exceptions import TelegramBadRequest
-from PIL import Image, ImageDraw, ImageFont
 
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8979310355:AAGPshB3WEGHVx33ZPjd9uIxQpY8wrGmy_8"
+BOT_TOKEN = "8494602735:AAFq9H3eZ8O4m9b1HfE9wPG82zbpfKgeT2A"
 
 SPONSOR_CHANNEL_ID = "@jdoauqh"
 SPONSOR_CHANNEL_URL = "https://t.me/jdoauqh"
@@ -720,131 +715,6 @@ def get_quest_progress(p, q_type):
 
 def _table_sort_key(row):
     return (row.get("points", 0), row.get("wins", 0))
-
-
-# ============================================================
-#  Генерация картинок турнирных таблиц
-# ============================================================
-
-_TABLE_FONT_CACHE = {}
-
-
-def _get_table_font(size, bold=False):
-    """Пытается найти шрифт с поддержкой кириллицы. Кэширует результат."""
-    key = (size, bold)
-    if key in _TABLE_FONT_CACHE:
-        return _TABLE_FONT_CACHE[key]
-
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
-    win_name = "arialbd.ttf" if bold else "arial.ttf"
-    candidates = [
-        os.path.join(base_dir, "fonts", name),
-        os.path.join(base_dir, name),
-        f"/usr/share/fonts/truetype/dejavu/{name}",
-        f"C:\\Windows\\Fonts\\{win_name}",
-    ]
-    font = None
-    for path in candidates:
-        try:
-            font = ImageFont.truetype(path, size)
-            break
-        except Exception:
-            continue
-    if font is None:
-        font = ImageFont.load_default()
-    _TABLE_FONT_CACHE[key] = font
-    return font
-
-
-def generate_table_image(title, rows, highlight_club=None, subtitle=None):
-    """
-    Рисует PNG-картинку турнирной таблицы.
-    rows: список dict вида {"club": str, "points": int, "wins": int,
-                             "draws": int, "losses": int, "played": int (опц.)}
-    Возвращает bytes готового PNG.
-    """
-    width = 760
-    header_h = 96 if subtitle else 74
-    col_header_h = 42
-    row_h = 44
-    pad_x = 26
-    height = header_h + col_header_h + row_h * max(1, len(rows)) + 20
-
-    color_bg = (16, 20, 28)
-    color_header_bg = (24, 92, 58)
-    color_colhead_bg = (20, 24, 33)
-    color_row_a = (27, 32, 43)
-    color_row_b = (22, 26, 36)
-    color_highlight = (43, 98, 176)
-    color_text = (232, 236, 241)
-    color_sub = (150, 160, 176)
-    color_muted = (120, 130, 146)
-
-    img = Image.new("RGB", (width, height), color_bg)
-    draw = ImageDraw.Draw(img)
-
-    f_title = _get_table_font(28, bold=True)
-    f_sub = _get_table_font(15)
-    f_head = _get_table_font(15, bold=True)
-    f_row = _get_table_font(16)
-    f_row_b = _get_table_font(16, bold=True)
-
-    draw.rectangle([0, 0, width, header_h], fill=color_header_bg)
-    draw.text((pad_x, 18), title, font=f_title, fill=(255, 255, 255))
-    if subtitle:
-        draw.text((pad_x, 56), subtitle, font=f_sub, fill=(215, 230, 222))
-
-    col_num = pad_x
-    col_club = pad_x + 46
-    col_i = width - 300
-    col_w = width - 240
-    col_d = width - 180
-    col_l = width - 120
-    col_pts = width - 56
-
-    y = header_h
-    draw.rectangle([0, y, width, y + col_header_h], fill=color_colhead_bg)
-    for text, x in [("#", col_num), ("Клуб", col_club), ("И", col_i),
-                     ("В", col_w), ("Н", col_d), ("П", col_l), ("О", col_pts)]:
-        draw.text((x, y + 12), text, font=f_head, fill=color_muted)
-    y += col_header_h
-
-    for idx, r in enumerate(rows, 1):
-        is_player = highlight_club is not None and r.get("club") == highlight_club
-        row_bg = color_highlight if is_player else (color_row_a if idx % 2 else color_row_b)
-        draw.rectangle([0, y, width, y + row_h], fill=row_bg)
-
-        font = f_row_b if is_player else f_row
-        text_color = (255, 255, 255) if is_player else color_text
-
-        draw.text((col_num, y + 13), str(idx), font=font, fill=text_color)
-
-        club_name = r.get("club", "")
-        marker = "» " if is_player else ""
-        max_chars = 27
-        if len(club_name) > max_chars:
-            club_name = club_name[:max_chars - 1] + "…"
-        draw.text((col_club, y + 13), f"{marker}{club_name}", font=font, fill=text_color)
-
-        played = r.get("played", r.get("wins", 0) + r.get("draws", 0) + r.get("losses", 0))
-        draw.text((col_i, y + 13), str(played), font=font, fill=text_color)
-        draw.text((col_w, y + 13), str(r.get("wins", 0)), font=font, fill=text_color)
-        draw.text((col_d, y + 13), str(r.get("draws", 0)), font=font, fill=text_color)
-        draw.text((col_l, y + 13), str(r.get("losses", 0)), font=font, fill=text_color)
-        draw.text((col_pts, y + 13), str(r.get("points", 0)), font=f_row_b, fill=text_color)
-
-        y += row_h
-
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
-def table_image_file(title, rows, highlight_club=None, subtitle=None, filename="table.png"):
-    """Обёртка: сразу возвращает aiogram BufferedInputFile для answer_photo/edit_media."""
-    png_bytes = generate_table_image(title, rows, highlight_club=highlight_club, subtitle=subtitle)
-    return BufferedInputFile(png_bytes, filename=filename)
 
 
 def get_division(club_name):
@@ -3055,18 +2925,15 @@ async def _render_euro_table(callback, user_id, p, euro_data, tournament, page):
     total_pages = max(1, (len(sorted_table) + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
 
+    text = f"📊 **ТАБЛИЦА {euro_info.get('name', '')}**\n"
+    text += "━━━━━━━━━━━━━━━━━━━━\n\n"
     start = (page - 1) * per_page
     end = min(start + per_page, len(sorted_table))
-    rows = [
-        {"club": club, "points": stats["points"], "wins": stats["wins"],
-         "draws": stats["draws"], "losses": stats["losses"], "played": stats["played"]}
-        for club, stats in sorted_table[start:end]
-    ]
-
-    photo = table_image_file(
-        f"{euro_info.get('name', '')}", rows, highlight_club=p["club"],
-        subtitle=f"Страница {page}/{total_pages}", filename="euro_table.png"
-    )
+    for i, (club, stats) in enumerate(sorted_table[start:end], start + 1):
+        is_p = "👉 " if club == p["club"] else "• "
+        text += (f"{i}. {is_p}**{club}** — {stats['points']} очков "
+                 f"({stats['played']} игр)\n")
+    text += f"\n📄 Страница {page}/{total_pages}"
 
     buttons = []
     nav = []
@@ -3079,36 +2946,10 @@ async def _render_euro_table(callback, user_id, p, euro_data, tournament, page):
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu_euro")])
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
-    caption = f"📊 **ТАБЛИЦА {euro_info.get('name', '')}**"
     try:
-        if callback.message.photo:
-            await callback.message.edit_media(
-                media=InputMediaPhoto(media=photo, caption=caption, parse_mode="Markdown"),
-                reply_markup=kb
-            )
-        else:
-            await callback.message.delete()
-            await callback.message.answer_photo(
-                photo=photo, caption=caption, parse_mode="Markdown", reply_markup=kb
-            )
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            return
-        photo = table_image_file(
-            f"{euro_info.get('name', '')}", rows, highlight_club=p["club"],
-            subtitle=f"Страница {page}/{total_pages}", filename="euro_table.png"
-        )
-        if callback.message.photo:
-            await callback.message.delete()
-        await callback.message.answer_photo(photo=photo, caption=caption, parse_mode="Markdown", reply_markup=kb)
-    except Exception:
-        photo = table_image_file(
-            f"{euro_info.get('name', '')}", rows, highlight_club=p["club"],
-            subtitle=f"Страница {page}/{total_pages}", filename="euro_table.png"
-        )
-        if callback.message.photo:
-            await callback.message.delete()
-        await callback.message.answer_photo(photo=photo, caption=caption, parse_mode="Markdown", reply_markup=kb)
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except TelegramBadRequest:
+        pass
 
 
 @dp.callback_query(F.data == "euro_play_match")
@@ -5339,44 +5180,19 @@ async def show_table_handler(callback: CallbackQuery):
         await init_tables_for_user(user_id, p["division"], p["club"])
         tables = await load_data(TABLES_FILE)
     table = tables[user_id][p["division"]]
-    photo = table_image_file(
-        f"{p['division']}", table, highlight_club=p["club"], filename="table.png"
-    )
+    text = f"📊 **ТАБЛИЦА: {p['division']}**\n"
+    for i, r in enumerate(table, 1):
+        is_p = "👉 " if r["club"] == p["club"] else "• "
+        text += f"{i}. {is_p}**{r['club']}** — {r['points']} очков ({r['wins']}В/{r['draws']}Н/{r['losses']}П)\n"
     kb = await main_menu_keyboard(callback.from_user.username, user_id)
     try:
         if callback.message.photo:
-            await callback.message.edit_media(
-                media=InputMediaPhoto(media=photo, caption=f"📊 **ТАБЛИЦА: {p['division']}**"),
-                reply_markup=kb
-            )
+            await callback.message.delete()
+            await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
         else:
-            await callback.message.delete()
-            await callback.message.answer_photo(
-                photo=photo, caption=f"📊 **ТАБЛИЦА: {p['division']}**",
-                parse_mode="Markdown", reply_markup=kb
-            )
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            return
-        photo = table_image_file(
-            f"{p['division']}", table, highlight_club=p["club"], filename="table.png"
-        )
-        if callback.message.photo:
-            await callback.message.delete()
-        await callback.message.answer_photo(
-            photo=photo, caption=f"📊 **ТАБЛИЦА: {p['division']}**",
-            parse_mode="Markdown", reply_markup=kb
-        )
+            await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
     except Exception:
-        photo = table_image_file(
-            f"{p['division']}", table, highlight_club=p["club"], filename="table.png"
-        )
-        if callback.message.photo:
-            await callback.message.delete()
-        await callback.message.answer_photo(
-            photo=photo, caption=f"📊 **ТАБЛИЦА: {p['division']}**",
-            parse_mode="Markdown", reply_markup=kb
-        )
+        await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
 
 
 @dp.callback_query(F.data == "menu_profile")
