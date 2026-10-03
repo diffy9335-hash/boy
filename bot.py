@@ -6788,6 +6788,46 @@ async def main():
         await bot.session.close()
 
 
+async def main_menu_keyboard(username: str = None, user_id: str = None):
+    match_btn_text = "🎮 Матч"
+    euro_button = None
+    wc_button = None
+
+    if user_id:
+        p = (await load_data(PLAYERS_FILE)).get(user_id)
+        if p:
+            if p.get("tour", 1) > 30:
+                match_btn_text = "🏁 Итоги сезона"
+            if p.get("euro_tournament") and p.get("euro_tournament") != "none":
+                euro_button = [InlineKeyboardButton(text="🌍 Еврокубки", callback_data="menu_euro")]
+            if p.get("wc_invited"):
+                wc_button = [InlineKeyboardButton(text="🏆 Чемпионат мира", callback_data="menu_world_cup")]
+
+    kb = [
+        [InlineKeyboardButton(text="🏋️‍♂️ Тренировка", callback_data="menu_train_choice"),
+         InlineKeyboardButton(text=match_btn_text, callback_data="menu_match")],
+        [InlineKeyboardButton(text="📊 Таблица", callback_data="menu_table"),
+         InlineKeyboardButton(text="👤 Профиль", callback_data="menu_profile")],
+        [InlineKeyboardButton(text="🍷 Личная жизнь", callback_data="menu_personal_life"),
+         InlineKeyboardButton(text="🏆 Зал Славы", callback_data="menu_leaderboard")],
+        [InlineKeyboardButton(text="🎯 Квесты", callback_data="menu_quests"),
+         InlineKeyboardButton(text="💰 Спонсоры", callback_data="menu_sponsors")],
+        [InlineKeyboardButton(text="🏆 Номинации сезона", callback_data="menu_awards")],
+        [InlineKeyboardButton(text="📊 Статистика лиги", callback_data="menu_league_stats")],
+        [InlineKeyboardButton(text="🟢 Онлайн / Топ", callback_data="menu_online")]
+    ]
+
+    if euro_button:
+        kb.insert(3, euro_button)
+    if wc_button:
+        kb.insert(3, wc_button)
+
+    if username and username.replace("@", "") in ADMINS:
+        kb.append([InlineKeyboardButton(text="👑 Админ-панель", callback_data="admin_panel")])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
 if __name__ == "__main__":
     try:
         asyncio.run(main())
