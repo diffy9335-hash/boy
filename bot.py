@@ -6828,6 +6828,74 @@ async def main_menu_keyboard(username: str = None, user_id: str = None):
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
+async def send_auto_delete_message(message: Message, text: str, parse_mode: str = "Markdown",
+                                    reply_markup=None, delay: int = 3):
+    sent = await message.answer(text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await asyncio.sleep(delay)
+    try:
+        await sent.delete()
+    except Exception:
+        pass
+
+
+async def get_moment_image(scenario_key: str):
+    if not scenario_key:
+        return None
+    images = await load_data(MOMENT_IMAGES_FILE)
+    lst = images.get(scenario_key) or []
+    return random.choice(lst) if lst else None
+
+
+async def get_profile_image(user_id: str):
+    images = await load_data(PROFILE_IMAGES_FILE)
+    personal = images.get(user_id)
+    if personal:
+        return personal
+    glob = images.get("__global__") or []
+    if glob:
+        return random.choice(glob)
+    return None
+
+
+async def send_or_edit_moment(callback: CallbackQuery, text: str, kb, scenario_key: str):
+    photo = await get_moment_image(scenario_key)
+    if photo:
+        try:
+            if callback.message.photo:
+                await callback.message.edit_media(
+                    media=InputMediaPhoto(media=photo, caption=text, parse_mode="Markdown"),
+                    reply_markup=kb
+                )
+            else:
+                try:
+                    await callback.message.delete()
+                except Exception:
+                    pass
+                await callback.message.answer_photo(
+                    photo=photo, caption=text, parse_mode="Markdown", reply_markup=kb
+                )
+            return
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                return
+            logging.warning(f"send_or_edit_moment photo: {e}")
+        except Exception as e:
+            logging.warning(f"send_or_edit_moment: {e}")
+
+    try:
+        if callback.message.photo:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+        else:
+            await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+
+
 if __name__ == "__main__":
     try:
         asyncio.run(main())
