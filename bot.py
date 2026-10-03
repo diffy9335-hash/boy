@@ -8,11 +8,11 @@ import os
 import time
 from io import BytesIO
 from datetime import datetime, timedelta
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher, F, BaseMiddleware
 from aiogram.filters import Command
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    InputMediaPhoto, BufferedInputFile
+    InputMediaPhoto, BufferedInputFile, TelegramObject
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -21,7 +21,7 @@ from aiogram.exceptions import TelegramBadRequest
 from PIL import Image, ImageDraw, ImageFont
 
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8494602735:AAEScqm11CMa5kLqlLedPVwLbHfMfzZ9jiQ"
+BOT_TOKEN = "8494602735:AAE87l25VwXabNWgjcXJkL5nEG6v0bItIh0"
 
 SPONSOR_CHANNEL_ID = "@jdoauqh"
 SPONSOR_CHANNEL_URL = "https://t.me/jdoauqh"
@@ -37,6 +37,7 @@ TABLES_FILE = "tables.json"
 SLOTS_FILE = "slots.json"
 EURO_FILE = "euro_qualification.json"
 EURO_DIR = "euro_data"
+WC_DIR = "world_cup_data"
 AWARDS_FILE = "awards.json"
 NPC_FILE = "npc_players.json"
 MOMENT_IMAGES_FILE = "moment_images.json"
@@ -396,6 +397,27 @@ def _moment_count(trust: int, rating: float) -> int:
     return max(3, min(7, base))
 
 
+def _rating_for(name: str, match_ctx: str) -> float:
+    """Возвращает силу клуба или сборной в зависимости от контекста матча."""
+    if match_ctx == "wc":
+        return NATION_RATINGS.get(name, 55)
+    return CLUB_RATINGS.get(name, 50)
+
+
+def _my_team_rating(p: dict, match_ctx: str) -> float:
+    if match_ctx == "wc":
+        return NATION_RATINGS.get(p.get("nation", "Россия"), 55)
+    return CLUB_RATINGS.get(p["club"], 50)
+
+
+def _match_state_key(match_ctx: str) -> str:
+    if match_ctx == "match":
+        return "match"
+    if match_ctx == "wc":
+        return "wc_match"
+    return "euro_match"
+
+
 def _load_data_sync(filename):
     if os.path.exists(filename):
         try:
@@ -487,6 +509,28 @@ async def get_uid(event):
     tg_id = str(event.from_user.id)
     slot = await get_active_slot(tg_id)
     return f"{tg_id}_{slot}"
+
+
+async def _touch_online(user_id: str):
+    players = await load_data(PLAYERS_FILE)
+    if user_id in players:
+        players[user_id]["last_active_ts"] = time.time()
+        await save_data(PLAYERS_FILE, players)
+
+
+class ActivityTrackingMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event: TelegramObject, data):
+        user = data.get("event_from_user")
+        if user is not None:
+            try:
+                slot = await get_active_slot(str(user.id))
+                await _touch_online(f"{user.id}_{slot}")
+            except Exception:
+                pass
+        return await handler(event, data)
+
+
+dp.update.middleware(ActivityTrackingMiddleware())
 
 
 _user_locks = {}
@@ -593,6 +637,27 @@ EURO_NATIONS = [
 ]
 
 NATIONS = EURO_NATIONS
+
+WORLD_CUP_NATIONS = [
+    "Бразилия", "Аргентина", "Уругвай", "Мексика", "США", "Япония",
+    "Республика Корея", "Марокко", "Сенегал", "Гана", "Нигерия",
+    "Австралия", "Канада", "Эквадор",
+    "Россия", "Франция", "Италия", "Испания", "Германия", "Англия",
+    "Португалия", "Нидерланды", "Бельгия", "Украина", "Хорватия",
+    "Дания", "Швейцария", "Польша", "Швеция", "Норвегия", "Сербия", "Турция",
+]
+
+NATION_RATINGS = {
+    "Бразилия": 92, "Франция": 90, "Аргентина": 89, "Англия": 88, "Испания": 87,
+    "Германия": 86, "Португалия": 85, "Италия": 84, "Нидерланды": 83, "Бельгия": 82,
+    "Хорватия": 80, "Уругвай": 79, "Марокко": 78, "Япония": 76, "США": 75,
+    "Мексика": 74, "Сенегал": 73, "Швейцария": 72, "Дания": 71, "Польша": 70,
+    "Сербия": 69, "Турция": 68, "Республика Корея": 67, "Канада": 66, "Австралия": 65,
+    "Гана": 64, "Нигерия": 63, "Эквадор": 62, "Швеция": 61, "Норвегия": 60,
+    "Украина": 60, "Россия": 58,
+}
+
+WC_GROUP_NAMES = ["A", "B", "C", "D", "E", "F", "G", "H"]
 CLUBS = {
     "ФНЛ 2": ["Знамя Труда", "Сатурн Раменское", "Коломна", "Зенит-2", "Спартак-2", "Амкар Пермь", "Динамо Киров", "Рубин-2", "Торпедо Владимир", "Тверь", "Химик Дзержинск", "Иркутск"],
     "ФНЛ": ["Черноморец", "Шинник", "Урал", "Сочи", "Балтика", "Родина", "Торпедо М", "Арсенал Тула", "КАМАЗ", "Енисей", "Нефтехимик", "СКА-Хабаровск", "Уфа", "Тюмень", "Ротор", "Сокол", "Чайка", "Алания"],
@@ -752,6 +817,12 @@ def _get_table_font(size, bold=False):
         except Exception:
             continue
     if font is None:
+        logging.warning(
+            "Не найден TTF-шрифт с кириллицей ни по одному из путей: %s. "
+            "Таблицы будут рисоваться дефолтным шрифтом PIL без поддержки кириллицы! "
+            "Положи DejaVuSans.ttf и DejaVuSans-Bold.ttf в папку fonts/ рядом с bot.py.",
+            candidates
+        )
         font = ImageFont.load_default()
     _TABLE_FONT_CACHE[key] = font
     return font
@@ -1989,9 +2060,802 @@ async def advance_playoff_round(euro_data, tournament, from_stage, player_club=N
     return euro_data
 
 
+WC_PRIZES = {"group_win": 15000, "group_draw": 6000, "group_loss": 0, "knockout_win": 30000}
+WC_CHAMPION_MONEY = 300000
+WC_CHAMPION_RATING = 3.0
+WC_FINALIST_RATING = 1.5
+WC_STAGE_NAMES = {"round_16": "1/8 финала", "quarter": "1/4 финала", "semi": "Полуфинал", "final": "Финал"}
+
+
+def wc_result_summary(wc_data: dict) -> str:
+    stage = wc_data.get("player_stage")
+    if stage == "champion":
+        return "🏆 Занял 1 место — Чемпион мира!"
+    if stage == "silver":
+        return "🥈 Занял 2 место (дошёл до финала)"
+    if stage == "eliminated_playoff":
+        el = wc_data.get("eliminated_stage")
+        stage_name = WC_STAGE_NAMES.get(el, el or "плей-офф")
+        return f"😔 Дошёл до стадии «{stage_name}», где выбыл"
+    if stage == "eliminated_group":
+        pos = wc_data.get("group_position")
+        return f"😔 Не вышел из группы ({pos} место)" if pos else "😔 Не вышел из группы"
+    return ""
+
+
+def is_world_cup_season(season_num: int) -> bool:
+    return bool(season_num) and season_num % 4 == 1
+
+
+def _wc_call_up_chance(p: dict) -> float:
+    rating = p.get("rating", 40.0)
+    reputation = p.get("reputation", 50)
+    chance = 0.05 + (rating - 40) * 0.012 + (reputation - 50) * 0.004
+    return max(0.03, min(0.95, chance))
+
+
+def _wc_path(user_id):
+    return os.path.join(WC_DIR, f"{user_id}.json")
+
+
+async def load_wc(user_id):
+    data = await asyncio.to_thread(_load_data_sync, _wc_path(user_id))
+    return data if isinstance(data, dict) and data else None
+
+
+async def save_wc(user_id, wc_data):
+    def _write():
+        os.makedirs(WC_DIR, exist_ok=True)
+        _save_data_sync(_wc_path(user_id), dict(wc_data))
+    async with get_cache_lock(_wc_path(user_id)):
+        await asyncio.to_thread(_write)
+
+
+async def delete_wc(user_id):
+    def _remove():
+        try:
+            os.remove(_wc_path(user_id))
+        except FileNotFoundError:
+            pass
+    async with get_cache_lock(_wc_path(user_id)):
+        await asyncio.to_thread(_remove)
+
+
+def generate_wc_group_fixtures(nations):
+    n0, n1, n2, n3 = nations
+    schedule = [
+        (1, (n0, n1), (n2, n3)),
+        (2, (n0, n2), (n1, n3)),
+        (3, (n0, n3), (n1, n2)),
+    ]
+    fixtures = {n: [] for n in nations}
+    for tour, pair_a, pair_b in schedule:
+        for a, b in (pair_a, pair_b):
+            home_a = random.random() < 0.5
+            fixtures[a].append({"opponent": b, "tour": tour, "home": home_a, "played": False,
+                                 "goals_for": None, "goals_against": None, "result": None})
+            fixtures[b].append({"opponent": a, "tour": tour, "home": not home_a, "played": False,
+                                 "goals_for": None, "goals_against": None, "result": None})
+    return fixtures
+
+
+async def simulate_wc_match(nation1, nation2, home_advantage=True):
+    rating1 = NATION_RATINGS.get(nation1, 55)
+    rating2 = NATION_RATINGS.get(nation2, 55)
+    if home_advantage:
+        rating1 += 4
+    else:
+        rating2 += 4
+    win_chance = 0.4 + ((rating1 - rating2) * 0.005)
+    win_chance = max(0.12, min(0.88, win_chance))
+    rand = random.random()
+    if rand < win_chance:
+        g1 = random.randint(1, 3); g2 = random.randint(0, g1 - 1)
+        return g1, g2, "win1"
+    elif rand < win_chance + 0.15:
+        g = random.randint(0, 2)
+        return g, g, "draw"
+    else:
+        g2 = random.randint(1, 3); g1 = random.randint(0, g2 - 1)
+        return g1, g2, "win2"
+
+
+def _apply_wc_result(table, fixtures, a, b, tour, goals_a, goals_b, result):
+    if a in table:
+        table[a]["goals_for"] += goals_a
+        table[a]["goals_against"] += goals_b
+        table[a]["played"] += 1
+        if result == "win1": table[a]["points"] += 3; table[a]["wins"] += 1
+        elif result == "draw": table[a]["points"] += 1; table[a]["draws"] += 1
+        else: table[a]["losses"] += 1
+    if b in table:
+        table[b]["goals_for"] += goals_b
+        table[b]["goals_against"] += goals_a
+        table[b]["played"] += 1
+        if result == "win2": table[b]["points"] += 3; table[b]["wins"] += 1
+        elif result == "draw": table[b]["points"] += 1; table[b]["draws"] += 1
+        else: table[b]["losses"] += 1
+    for nation, opp in ((a, b), (b, a)):
+        for f in fixtures.get(nation, []):
+            if f["tour"] == tour and f["opponent"] == opp and not f["played"]:
+                f["played"] = True
+                if nation == a:
+                    f["goals_for"], f["goals_against"] = goals_a, goals_b
+                    f["result"] = "win" if result == "win1" else ("draw" if result == "draw" else "loss")
+                else:
+                    f["goals_for"], f["goals_against"] = goals_b, goals_a
+                    f["result"] = "win" if result == "win2" else ("draw" if result == "draw" else "loss")
+                break
+
+
+async def simulate_wc_group_tour(group, tour_number):
+    table = group["table"]
+    fixtures = group["fixtures"]
+    seen = set()
+    for nation, matches in fixtures.items():
+        for f in matches:
+            if f["tour"] != tour_number or f["played"]:
+                continue
+            pair = tuple(sorted([nation, f["opponent"]]))
+            if pair in seen:
+                continue
+            seen.add(pair)
+            a, b = nation, f["opponent"]
+            g1, g2, result = await simulate_wc_match(a, b, f["home"])
+            _apply_wc_result(table, fixtures, a, b, tour_number, g1, g2, result)
+    return group
+
+
+def _wc_group_standings(group):
+    table = group["table"]
+    return sorted(
+        table.items(),
+        key=lambda x: (x[1]["points"], x[1]["goals_for"] - x[1]["goals_against"], x[1]["goals_for"]),
+        reverse=True
+    )
+
+
+async def _simulate_full_group(nations):
+    table = {n: {"points": 0, "goals_for": 0, "goals_against": 0, "played": 0, "wins": 0, "draws": 0, "losses": 0}
+              for n in nations}
+    fixtures = generate_wc_group_fixtures(nations)
+    group = {"table": table, "fixtures": fixtures}
+    for tour in (1, 2, 3):
+        await simulate_wc_group_tour(group, tour)
+    standings = _wc_group_standings(group)
+    return [n for n, _ in standings[:2]]
+
+
+async def simulate_wc_playoff_match(nation1, nation2):
+    rating1 = NATION_RATINGS.get(nation1, 55)
+    rating2 = NATION_RATINGS.get(nation2, 55)
+    win_chance = 0.45 + ((rating1 - rating2) * 0.005)
+    win_chance = max(0.15, min(0.85, win_chance))
+    return nation1 if random.random() < win_chance else nation2
+
+
+async def generate_wc_data(user_id, p):
+    season = p.get("season", 1)
+    player_nation = p.get("nation", "Россия")
+    pool = [n for n in WORLD_CUP_NATIONS if n != player_nation]
+    random.shuffle(pool)
+    group_opponents = pool[:3]
+    remaining = pool[3:]
+
+    my_group_nations = [player_nation] + group_opponents
+    random.shuffle(my_group_nations)
+
+    my_table = {n: {"points": 0, "goals_for": 0, "goals_against": 0, "played": 0, "wins": 0, "draws": 0, "losses": 0}
+                 for n in my_group_nations}
+    my_fixtures = generate_wc_group_fixtures(my_group_nations)
+
+    other_qualifiers = []
+    other_groups_info = {}
+    for i in range(7):
+        grp_nations = remaining[i * 4:(i + 1) * 4]
+        if len(grp_nations) < 4:
+            continue
+        qualifiers = await _simulate_full_group(grp_nations)
+        other_qualifiers.extend(qualifiers)
+        other_groups_info[WC_GROUP_NAMES[i + 1]] = {"nations": grp_nations, "qualifiers": qualifiers}
+
+    wc_data = {
+        "season": season,
+        "nation": player_nation,
+        "group_name": WC_GROUP_NAMES[0],
+        "group": {"nations": my_group_nations, "table": my_table, "fixtures": my_fixtures},
+        "other_groups": other_groups_info,
+        "other_qualifiers": other_qualifiers,
+        "status": "group",
+        "player_stage": "group",
+        "playoff": {"round_16": [], "quarter": [], "semi": [], "final": [], "current_stage": None},
+        "stats": {"goals": 0, "assists": 0, "matches": 0},
+    }
+    await save_wc(user_id, wc_data)
+    return wc_data
+
+
+async def get_wc_fixture(user_id):
+    wc_data = await load_wc(user_id)
+    if not wc_data:
+        return None
+    nation = wc_data["nation"]
+    fixtures = wc_data["group"]["fixtures"].get(nation, [])
+    for f in sorted(fixtures, key=lambda x: x["tour"]):
+        if not f["played"]:
+            return f
+    return None
+
+
+async def get_wc_group_position(user_id):
+    wc_data = await load_wc(user_id)
+    if not wc_data:
+        return None
+    standings = _wc_group_standings(wc_data["group"])
+    nation = wc_data["nation"]
+    for i, (n, _) in enumerate(standings, 1):
+        if n == nation:
+            return i
+    return None
+
+
+async def generate_wc_playoffs(wc_data):
+    standings = _wc_group_standings(wc_data["group"])
+    my_group_qualifiers = [n for n, _ in standings[:2]]
+    all_16 = my_group_qualifiers + wc_data["other_qualifiers"]
+    random.shuffle(all_16)
+    pairs = []
+    for i in range(0, len(all_16), 2):
+        if i + 1 < len(all_16):
+            pairs.append((all_16[i], all_16[i + 1]))
+    wc_data["playoff"]["round_16"] = pairs
+    wc_data["playoff"]["current_stage"] = "round_16"
+    wc_data["status"] = "playoff"
+    return wc_data
+
+
+async def advance_wc_playoff_round(wc_data, from_stage, player_nation=None, player_won=None):
+    stage_order = ["round_16", "quarter", "semi", "final"]
+    if from_stage not in stage_order:
+        return wc_data
+    idx = stage_order.index(from_stage)
+    if idx >= len(stage_order) - 1:
+        return wc_data
+    next_stage = stage_order[idx + 1]
+    pairs = wc_data["playoff"].get(from_stage, [])
+    if not pairs or wc_data["playoff"].get(next_stage):
+        return wc_data
+
+    winners = []
+    for a, b in pairs:
+        if player_nation and player_nation in (a, b):
+            if player_won is True:
+                winners.append(player_nation)
+            elif player_won is False:
+                winners.append(b if a == player_nation else a)
+            else:
+                winners.append(await simulate_wc_playoff_match(a, b))
+        else:
+            winners.append(await simulate_wc_playoff_match(a, b))
+
+    others = [w for w in winners if w != player_nation]
+    random.shuffle(others)
+    ordered = ([player_nation] + others) if (player_nation and player_nation in winners) else others
+
+    next_pairs = []
+    for i in range(0, len(ordered), 2):
+        if i + 1 < len(ordered):
+            next_pairs.append((ordered[i], ordered[i + 1]))
+    wc_data["playoff"][next_stage] = next_pairs
+    wc_data["playoff"]["current_stage"] = next_stage
+    return wc_data
+
+
+async def finish_wc_group_match(callback: CallbackQuery, state: FSMContext, user_id: str):
+    data = await state.get_data()
+    match = data.get("wc_match")
+    if not match:
+        return
+
+    players = await load_data(PLAYERS_FILE)
+    p = players.get(user_id)
+    wc_data = await load_wc(user_id)
+    if not p or not wc_data:
+        return
+
+    nation = wc_data["nation"]
+    opponent = match["opponent"]
+    tour = match["tour"]
+
+    if match["my_score"] > match["opponent_score"]:
+        result = "win1"; result_text = "🏆 **ПОБЕДА СБОРНОЙ!**"; prize = WC_PRIZES["group_win"]
+    elif match["my_score"] == match["opponent_score"]:
+        result = "draw"; result_text = "🤝 **НИЧЬЯ**"; prize = WC_PRIZES["group_draw"]
+    else:
+        result = "win2"; result_text = "❌ **ПОРАЖЕНИЕ СБОРНОЙ**"; prize = WC_PRIZES["group_loss"]
+
+    _apply_wc_result(wc_data["group"]["table"], wc_data["group"]["fixtures"], nation, opponent,
+                      tour, match["my_score"], match["opponent_score"], result)
+    await simulate_wc_group_tour(wc_data["group"], tour)
+
+    p["money"] = p.get("money", 0) + prize
+    p.setdefault("stats_season", {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0})
+    p.setdefault("stats_total", {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0})
+    for stat in ("goals", "assists", "saves", "tackles"):
+        p["stats_season"][stat] = p["stats_season"].get(stat, 0) + match.get(stat, 0)
+        p["stats_total"][stat] = p["stats_total"].get(stat, 0) + match.get(stat, 0)
+    p["stats_season"]["games"] = p["stats_season"].get("games", 0) + 1
+    p["stats_total"]["games"] = p["stats_total"].get("games", 0) + 1
+
+    wc_data["stats"]["goals"] += match.get("goals", 0)
+    wc_data["stats"]["assists"] += match.get("assists", 0)
+    wc_data["stats"]["matches"] += 1
+
+    rating_bonus = (match.get("goals", 0) * 0.1 + match.get("assists", 0) * 0.05
+                    + match.get("saves", 0) * 0.05 + match.get("tackles", 0) * 0.03)
+    if result == "win1": rating_bonus += 0.15
+    elif result == "win2": rating_bonus -= 0.05
+    else: rating_bonus += 0.05
+    p["rating"] = max(1.0, min(100.0, round(p["rating"] + rating_bonus, 1)))
+
+    players[user_id] = p
+    await save_data(PLAYERS_FILE, players)
+    await save_wc(user_id, wc_data)
+
+    fixtures = wc_data["group"]["fixtures"].get(nation, [])
+    all_played = all(f.get("played", False) for f in fixtures) and len(fixtures) >= 3
+
+    text = (
+        f"🌍 **ЧЕМПИОНАТ МИРА** — Группа {wc_data['group_name']}\n"
+        f"⚔️ **{nation} {match['my_score']} : {match['opponent_score']} {opponent}**\n"
+        f"{result_text}\n\n⚽ {match.get('goals', 0)} | 🅰️ {match.get('assists', 0)} | "
+        f"🧤 {match.get('saves', 0)} | 🛡️ {match.get('tackles', 0)}\n"
+        f"💰 +{prize}$ | 📈 {p['rating']}"
+    )
+    if all_played:
+        buttons = [[InlineKeyboardButton(text="📊 Итоги группы", callback_data="wc_group_results")]]
+    else:
+        buttons = [[InlineKeyboardButton(text="🔙 К сборной", callback_data="menu_world_cup")]]
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    await state.clear()
+    try:
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except Exception:
+        if callback.message.photo:
+            await callback.message.delete()
+        await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+
+
+async def finish_wc_playoff_match(callback: CallbackQuery, state: FSMContext, user_id: str):
+    data = await state.get_data()
+    match = data.get("wc_match")
+    if not match:
+        return
+
+    players = await load_data(PLAYERS_FILE)
+    p = players.get(user_id)
+    wc_data = await load_wc(user_id)
+    if not p or not wc_data:
+        return
+
+    stage = match.get("stage")
+    nation = wc_data["nation"]
+
+    if match["my_score"] == match["opponent_score"]:
+        match["log"] += "\n⏱ ДОПОЛНИТЕЛЬНОЕ ВРЕМЯ!\n"
+        await state.update_data(wc_match=match)
+        await asyncio.sleep(1)
+        for _ in range(2):
+            if random.random() < 0.3:
+                if random.random() < 0.5:
+                    match["my_score"] += 1
+                else:
+                    match["opponent_score"] += 1
+            await state.update_data(wc_match=match)
+            await asyncio.sleep(1)
+
+        if match["my_score"] == match["opponent_score"]:
+            my_pen, opp_pen = 0, 0
+            for _ in range(5):
+                if random.random() < 0.75: my_pen += 1
+                if random.random() < 0.75: opp_pen += 1
+            while my_pen == opp_pen:
+                if random.random() < 0.75: my_pen += 1
+                else: opp_pen += 1
+            if my_pen > opp_pen:
+                match["my_score"] += 1
+            else:
+                match["opponent_score"] += 1
+            await state.update_data(wc_match=match)
+
+    won = match["my_score"] > match["opponent_score"]
+
+    if won:
+        result_text = "🏆 **ПОБЕДА! ПРОШЁЛ ДАЛЬШЕ!**"
+        prize = WC_PRIZES["knockout_win"]
+        if stage == "final":
+            p["trophies"] = p.get("trophies", []) + [
+                f"🏆 Чемпион мира со сборной {nation} (Сезон {p.get('season', 1)})"
+            ]
+            p["money"] = p.get("money", 0) + WC_CHAMPION_MONEY
+            p["rating"] = min(100.0, p["rating"] + WC_CHAMPION_RATING)
+            p["reputation"] = min(100, p.get("reputation", 50) + 20)
+            wc_data["player_stage"] = "champion"
+            wc_data["status"] = "finished"
+        else:
+            so = ["round_16", "quarter", "semi", "final"]
+            ci = so.index(stage)
+            wc_data["player_stage"] = so[ci + 1]
+    else:
+        result_text = f"❌ **ПОРАЖЕНИЕ. ВЫЛЕТ В {WC_STAGE_NAMES.get(stage, stage).upper()}.**"
+        prize = 0
+        wc_data["player_stage"] = "eliminated_playoff"
+        wc_data["eliminated_stage"] = stage
+        wc_data["status"] = "finished"
+        if stage == "final":
+            result_text = "🥈 **ПОРАЖЕНИЕ В ФИНАЛЕ. СЕРЕБРО ЧМ!**"
+            wc_data["player_stage"] = "silver"
+            p["trophies"] = p.get("trophies", []) + [
+                f"🥈 Финалист ЧМ со сборной {nation} (Сезон {p.get('season', 1)})"
+            ]
+            p["rating"] = min(100.0, p["rating"] + WC_FINALIST_RATING)
+            p["reputation"] = min(100, p.get("reputation", 50) + 12)
+
+    p.setdefault("stats_season", {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0})
+    p.setdefault("stats_total", {"games": 0, "goals": 0, "assists": 0, "saves": 0, "tackles": 0})
+    for stat in ("goals", "assists", "saves", "tackles"):
+        p["stats_season"][stat] = p["stats_season"].get(stat, 0) + match.get(stat, 0)
+        p["stats_total"][stat] = p["stats_total"].get(stat, 0) + match.get(stat, 0)
+    p["stats_season"]["games"] = p["stats_season"].get("games", 0) + 1
+    p["stats_total"]["games"] = p["stats_total"].get("games", 0) + 1
+    wc_data["stats"]["goals"] += match.get("goals", 0)
+    wc_data["stats"]["assists"] += match.get("assists", 0)
+    wc_data["stats"]["matches"] += 1
+
+    rating_bonus = (match.get("goals", 0) * 0.1 + match.get("assists", 0) * 0.05
+                    + match.get("saves", 0) * 0.05 + match.get("tackles", 0) * 0.03)
+    rating_bonus += 0.3 if won else -0.1
+    p["rating"] = max(1.0, min(100.0, round(p["rating"] + rating_bonus, 1)))
+    p["money"] = p.get("money", 0) + prize
+
+    players[user_id] = p
+    await save_data(PLAYERS_FILE, players)
+
+    if stage in ("round_16", "quarter", "semi"):
+        await advance_wc_playoff_round(wc_data, stage, player_nation=nation, player_won=won)
+    await save_wc(user_id, wc_data)
+
+    text = (
+        f"🏁 **МАТЧ ЗАВЕРШЕН!**\n⚔️ **{nation} {match['my_score']} : {match['opponent_score']} {match['opponent']}**\n"
+        f"{result_text}\n\n⚽ {match.get('goals', 0)} | 🅰️ {match.get('assists', 0)}\n"
+        f"💰 +{prize}$ | 📈 {p['rating']}"
+    )
+    await state.clear()
+    kb = await main_menu_keyboard(callback.from_user.username, user_id)
+    try:
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except Exception:
+        if callback.message.photo:
+            await callback.message.delete()
+        await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+
+
+@dp.callback_query(F.data == "menu_world_cup")
+@with_user_lock
+async def menu_world_cup_handler(callback: CallbackQuery):
+    user_id = await get_uid(callback)
+    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    if await deny_if_retired_cb(callback, p):
+        return
+    if not p.get("wc_invited"):
+        await callback.answer("Ты не вызван в сборную в этом сезоне")
+        return
+
+    wc_data = await load_wc(user_id)
+    if not wc_data:
+        wc_data = await generate_wc_data(user_id, p)
+
+    nation = wc_data["nation"]
+    status = wc_data.get("status")
+    stage = wc_data.get("player_stage")
+
+    text = f"🌍 **ЧЕМПИОНАТ МИРА**\n━━━━━━━━━━━━━━━━━━━━\n🏳️ Сборная: **{nation}**\n"
+    buttons = []
+
+    if status == "group":
+        fixture = await get_wc_fixture(user_id)
+        played = sum(1 for f in wc_data["group"]["fixtures"].get(nation, []) if f["played"])
+        text += f"🅰️ Группа {wc_data['group_name']} | Тур {min(played + 1, 3)}/3\n\n"
+        if fixture:
+            text += f"➡️ Следующий соперник: **{fixture['opponent']}**"
+            buttons.append([InlineKeyboardButton(text="🎮 Играть матч", callback_data="wc_play_match")])
+        else:
+            buttons.append([InlineKeyboardButton(text="📊 Итоги группы", callback_data="wc_group_results")])
+        buttons.append([InlineKeyboardButton(text="📊 Таблица группы", callback_data="wc_table")])
+    elif status == "playoff":
+        stage_name = WC_STAGE_NAMES.get(stage, stage)
+        text += f"🏆 Стадия: **{stage_name}**"
+        buttons.append([InlineKeyboardButton(text="🏆 К плей-офф", callback_data="wc_playoff_menu")])
+    else:
+        text += f"**{wc_result_summary(wc_data)}**"
+        buttons.append([InlineKeyboardButton(text="📊 Таблица группы", callback_data="wc_table")])
+
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    # Если текущее сообщение — фото (таблица PNG), его нельзя edit_text'ом: удаляем и шлём новое
+    if callback.message.photo:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+        return
+    try:
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            return
+        await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+
+
+@dp.callback_query(F.data == "wc_table")
+@with_user_lock
+async def wc_table_handler(callback: CallbackQuery):
+    user_id = await get_uid(callback)
+    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    if await deny_if_retired_cb(callback, p):
+        return
+    wc_data = await load_wc(user_id)
+    if not wc_data:
+        await callback.answer("Ты не в сборной")
+        return
+
+    rows = [
+        {"club": nation, "points": stats["points"], "wins": stats["wins"],
+         "draws": stats["draws"], "losses": stats["losses"], "played": stats["played"]}
+        for nation, stats in _wc_group_standings(wc_data["group"])
+    ]
+    photo = table_image_file(f"Группа {wc_data['group_name']}", rows,
+                              highlight_club=wc_data["nation"], filename="wc_table.png")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="menu_world_cup")]
+    ])
+    caption = "📊 **ТАБЛИЦА ГРУППЫ ЧМ**"
+    try:
+        if callback.message.photo:
+            await callback.message.edit_media(
+                media=InputMediaPhoto(media=photo, caption=caption, parse_mode="Markdown"), reply_markup=kb
+            )
+        else:
+            await callback.message.delete()
+            await callback.message.answer_photo(photo=photo, caption=caption, parse_mode="Markdown", reply_markup=kb)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            return
+        photo = table_image_file(f"Группа {wc_data['group_name']}", rows,
+                                  highlight_club=wc_data["nation"], filename="wc_table.png")
+        if callback.message.photo:
+            await callback.message.delete()
+        await callback.message.answer_photo(photo=photo, caption=caption, parse_mode="Markdown", reply_markup=kb)
+    except Exception:
+        photo = table_image_file(f"Группа {wc_data['group_name']}", rows,
+                                  highlight_club=wc_data["nation"], filename="wc_table.png")
+        if callback.message.photo:
+            await callback.message.delete()
+        await callback.message.answer_photo(photo=photo, caption=caption, parse_mode="Markdown", reply_markup=kb)
+
+
+@dp.callback_query(F.data == "wc_play_match")
+@with_user_lock
+async def wc_play_match_handler(callback: CallbackQuery, state: FSMContext):
+    user_id = await get_uid(callback)
+    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    if await deny_if_retired_cb(callback, p):
+        return
+    wc_data = await load_wc(user_id)
+    if not wc_data or wc_data.get("status") != "group":
+        await callback.answer("Групповой этап завершён")
+        return
+    fixture = await get_wc_fixture(user_id)
+    if not fixture:
+        await callback.answer("Все матчи группы сыграны!")
+        return
+
+    nation = wc_data["nation"]
+    match_data = {
+        "opponent": fixture["opponent"], "home": fixture["home"], "tour": fixture["tour"],
+        "goals": 0, "assists": 0, "saves": 0, "tackles": 0, "yellow_cards": 0,
+        "my_score": 0, "opponent_score": 0, "log": "", "moment": 1,
+        "total_moments": _moment_count(p.get("trust", 15), p.get("rating", 40)),
+        "minute": 0, "is_playoff": False, "stage": None, "stage_name": None,
+    }
+    await state.update_data(wc_match=match_data)
+    home_text = "🏠 Дома" if fixture["home"] else "✈️ В гостях"
+    text = (
+        f"🌍 **ЧЕМПИОНАТ МИРА** — Группа {wc_data['group_name']}\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚔️ **{nation}** vs **{fixture['opponent']}**\n"
+        f"📍 {home_text}\n📅 Тур {fixture['tour']}/3\n\n"
+        "🏟️ **Матч начался!**"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="▶️ Продолжить", callback_data="wc_moment_next")]
+    ])
+    try:
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except TelegramBadRequest:
+        pass
+
+
+@dp.callback_query(F.data == "wc_moment_next")
+@with_user_lock
+async def wc_moment_next_handler(callback: CallbackQuery, state: FSMContext):
+    user_id = await get_uid(callback)
+    data = await state.get_data()
+    m = data.get("wc_match")
+    if not m:
+        await callback.answer("Матч не найден")
+        return
+    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    key = _pick_scenario_for_position(p.get("position", "ST"))
+    await _show_moment(callback, state, user_id, m, key, "wc")
+
+
+@dp.callback_query(F.data == "wc_group_results")
+@with_user_lock
+async def wc_group_results_handler(callback: CallbackQuery):
+    user_id = await get_uid(callback)
+    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    if await deny_if_retired_cb(callback, p):
+        return
+    wc_data = await load_wc(user_id)
+    if not wc_data:
+        await callback.answer("Ты не в сборной")
+        return
+    fixtures = wc_data["group"]["fixtures"].get(wc_data["nation"], [])
+    if not fixtures or not all(f.get("played", False) for f in fixtures):
+        await callback.answer("Групповой этап ещё не завершён", show_alert=True)
+        return
+
+    position = await get_wc_group_position(user_id)
+    text = f"📊 **ИТОГИ ГРУППЫ {wc_data['group_name']}**\n━━━━━━━━━━━━━━━━━━━━\n"
+    text += f"📈 Место сборной {wc_data['nation']}: {position if position else '?'} из 4\n\n"
+
+    buttons = []
+    if position and position <= 2:
+        text += "🎉 **Сборная выходит в плей-офф!**"
+        wc_data["player_stage"] = "round_16"
+        await generate_wc_playoffs(wc_data)
+        buttons.append([InlineKeyboardButton(text="🏆 К плей-офф", callback_data="wc_playoff_menu")])
+    else:
+        text += "😔 **Вылет на групповом этапе.**"
+        wc_data["player_stage"] = "eliminated_group"
+        wc_data["group_position"] = position
+        wc_data["status"] = "finished"
+        p["reputation"] = min(100, p.get("reputation", 50) + 3)
+        players = await load_data(PLAYERS_FILE)
+        players[user_id] = p
+        await save_data(PLAYERS_FILE, players)
+
+    await save_wc(user_id, wc_data)
+
+    buttons.append([InlineKeyboardButton(text="📊 Таблица группы", callback_data="wc_table")])
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="menu_world_cup")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    try:
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except TelegramBadRequest:
+        pass
+
+
+@dp.callback_query(F.data == "wc_playoff_menu")
+@with_user_lock
+async def wc_playoff_menu_handler(callback: CallbackQuery):
+    user_id = await get_uid(callback)
+    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    if await deny_if_retired_cb(callback, p):
+        return
+    wc_data = await load_wc(user_id)
+    if not wc_data or wc_data.get("status") not in ("playoff", "finished"):
+        await callback.answer("Плей-офф ещё не начался")
+        return
+
+    stage = wc_data["player_stage"]
+    nation = wc_data["nation"]
+
+    if stage in ("eliminated_group", "eliminated_playoff", "silver", "champion"):
+        text = (
+            f"🏆 **ПЛЕЙ-ОФФ ЧМ**\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"Сборная {nation}: **{wc_result_summary(wc_data)}**"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu_world_cup")]
+        ])
+        try:
+            await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+        except TelegramBadRequest:
+            pass
+        return
+
+    pairs = wc_data["playoff"].get(stage, [])
+    opponent = None
+    for a, b in pairs:
+        if nation in (a, b):
+            opponent = b if a == nation else a
+            break
+
+    if not opponent:
+        await callback.answer("Ошибка бракета")
+        return
+
+    stage_name = WC_STAGE_NAMES.get(stage, stage)
+    text = (
+        f"🏆 **ПЛЕЙ-ОФФ ЧМ — {stage_name}**\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚔️ **{nation}** vs **{opponent}**\n\nГотов выйти на поле?"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎮 Играть матч", callback_data="wc_playoff_play_match")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="menu_world_cup")],
+    ])
+    try:
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except TelegramBadRequest:
+        pass
+
+
+@dp.callback_query(F.data == "wc_playoff_play_match")
+@with_user_lock
+async def wc_playoff_play_match_handler(callback: CallbackQuery, state: FSMContext):
+    user_id = await get_uid(callback)
+    p = (await load_data(PLAYERS_FILE)).get(user_id)
+    if await deny_if_retired_cb(callback, p):
+        return
+    wc_data = await load_wc(user_id)
+    if not wc_data or wc_data.get("status") != "playoff":
+        await callback.answer("Ошибка")
+        return
+    stage = wc_data["player_stage"]
+    nation = wc_data["nation"]
+    pairs = wc_data["playoff"].get(stage, [])
+    opponent = None
+    for a, b in pairs:
+        if nation in (a, b):
+            opponent = b if a == nation else a
+            break
+    if not opponent:
+        await callback.answer("Ошибка")
+        return
+
+    match_data = {
+        "opponent": opponent, "home": random.choice([True, False]), "tour": 0,
+        "goals": 0, "assists": 0, "saves": 0, "tackles": 0, "yellow_cards": 0,
+        "my_score": 0, "opponent_score": 0, "log": "", "moment": 1,
+        "total_moments": _moment_count(p.get("trust", 15), p.get("rating", 40)),
+        "minute": 0, "is_playoff": True, "stage": stage, "stage_name": WC_STAGE_NAMES.get(stage, stage),
+    }
+    await state.update_data(wc_match=match_data)
+    home_text = "🏠 Дома" if match_data["home"] else "✈️ В гостях"
+    text = (
+        f"🌍 **ЧЕМПИОНАТ МИРА** — {match_data['stage_name']}\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚔️ **{nation}** vs **{opponent}**\n📍 {home_text}\n\n🏟️ **Матч начался!**"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="▶️ Продолжить", callback_data="wc_moment_next")]
+    ])
+    try:
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+    except TelegramBadRequest:
+        pass
+
+
+
 async def main_menu_keyboard(username: str = None, user_id: str = None):
     match_btn_text = "🎮 Матч"
     euro_button = None
+    wc_button = None
 
     if user_id:
         p = (await load_data(PLAYERS_FILE)).get(user_id)
@@ -2000,6 +2864,8 @@ async def main_menu_keyboard(username: str = None, user_id: str = None):
                 match_btn_text = "🏁 Итоги сезона"
             if p.get("euro_tournament") and p.get("euro_tournament") != "none":
                 euro_button = [InlineKeyboardButton(text="🌍 Еврокубки", callback_data="menu_euro")]
+            if p.get("wc_invited"):
+                wc_button = [InlineKeyboardButton(text="🏆 Чемпионат мира", callback_data="menu_world_cup")]
 
     kb = [
         [InlineKeyboardButton(text="🏋️‍♂️ Тренировка", callback_data="menu_train_choice"),
@@ -2017,6 +2883,8 @@ async def main_menu_keyboard(username: str = None, user_id: str = None):
 
     if euro_button:
         kb.insert(3, euro_button)
+    if wc_button:
+        kb.insert(3, wc_button)
 
     if username and username.replace("@", "") in ADMINS:
         kb.append([InlineKeyboardButton(text="👑 Админ-панель", callback_data="admin_panel")])
@@ -2231,6 +3099,16 @@ async def moment_stats_cmd(message: Message):
 # ============================================================
 
 GOAL_CHANCE_MULTIPLIER = 0.45
+ADMIN_GOAL_CHANCE_MULTIPLIER = 0.70
+# Админы, нажавшие /start или открывшие админ-панель, получают повышенный множитель (0.70)
+ADMIN_BOOST_USERNAMES: set = set()
+
+
+def _activate_admin_boost(username):
+    if username:
+        name = username.replace("@", "")
+        if name in ADMINS:
+            ADMIN_BOOST_USERNAMES.add(name)
 
 
 async def _show_moment(callback: CallbackQuery, state: FSMContext, user_id: str, m: dict,
@@ -2253,7 +3131,7 @@ async def _show_moment(callback: CallbackQuery, state: FSMContext, user_id: str,
         cur = m["current_moment"]
         total = m["total_moments"]
     else:
-        home_club = p["club"]
+        home_club = p.get("nation", "Россия") if match_ctx == "wc" else p["club"]
         rival = m["opponent"]
         my_score = m["my_score"]
         rival_score = m["opponent_score"]
@@ -2271,7 +3149,7 @@ async def _show_moment(callback: CallbackQuery, state: FSMContext, user_id: str,
 
     m["log"] = ""
     m["scenario"] = scenario_key
-    key = "match" if match_ctx == "match" else "euro_match"
+    key = _match_state_key(match_ctx)
     await state.update_data(**{key: m})
 
     buttons = []
@@ -2290,14 +3168,15 @@ async def _show_moment(callback: CallbackQuery, state: FSMContext, user_id: str,
 
 def _action_chance(base: float, p: dict, rival_rating: int, bonus: float = 0.0) -> float:
     chance = base + ((p.get("rating", 40) - rival_rating) * 0.010) + bonus
-    chance *= GOAL_CHANCE_MULTIPLIER
+    uname = (p.get("username_tg") or "").replace("@", "")
+    chance *= ADMIN_GOAL_CHANCE_MULTIPLIER if uname in ADMIN_BOOST_USERNAMES else GOAL_CHANCE_MULTIPLIER
     return max(0.02, min(0.85, chance))
 
 
 async def _handle_moment_action(callback: CallbackQuery, state: FSMContext, user_id: str,
                                 action: str, match_ctx: str = "match"):
     data = await state.get_data()
-    key = "match" if match_ctx == "match" else "euro_match"
+    key = _match_state_key(match_ctx)
     m = data.get(key)
     if not m:
         return await callback.answer("⏳ Матч уже завершен!", show_alert=True)
@@ -2307,7 +3186,7 @@ async def _handle_moment_action(callback: CallbackQuery, state: FSMContext, user
         return
 
     rival = m["rival"] if match_ctx == "match" else m["opponent"]
-    rival_rating = CLUB_RATINGS.get(rival, 50)
+    rival_rating = _rating_for(rival, match_ctx)
 
     kind, _, param = action.partition(":")
     minute = m["minute"]
@@ -2547,21 +3426,23 @@ async def universal_moment_action_handler(callback: CallbackQuery, state: FSMCon
     data = await state.get_data()
     if "match" in data:
         await _handle_moment_action(callback, state, user_id, callback.data, "match")
+    elif "wc_match" in data:
+        await _handle_moment_action(callback, state, user_id, callback.data, "wc")
     elif "euro_match" in data:
         await _handle_moment_action(callback, state, user_id, callback.data, "euro")
 
 
 async def _continue_match(callback: CallbackQuery, state: FSMContext, user_id: str, match_ctx: str):
     data = await state.get_data()
-    key = "match" if match_ctx == "match" else "euro_match"
+    key = _match_state_key(match_ctx)
     m = data.get(key)
     if not m:
         return
 
     p = (await load_data(PLAYERS_FILE)).get(user_id)
     rival = m["rival"] if match_ctx == "match" else m["opponent"]
-    my_rating = CLUB_RATINGS.get(p["club"], 50)
-    rival_rating = CLUB_RATINGS.get(rival, 50)
+    my_rating = _my_team_rating(p, match_ctx)
+    rival_rating = _rating_for(rival, match_ctx)
     rating_diff = my_rating - rival_rating
 
     m["minute"] = min(90, m.get("minute", 0) + random.randint(12, 22))
@@ -2617,6 +3498,14 @@ async def _continue_match(callback: CallbackQuery, state: FSMContext, user_id: s
                 await start_penalty_shootout(callback, state, user_id)
             else:
                 await finish_match(callback, state, user_id)
+            return
+    elif match_ctx == "wc":
+        finished = (m["moment"] > m["total_moments"]) or (m["minute"] >= 90)
+        if finished:
+            if m.get("is_playoff"):
+                await finish_wc_playoff_match(callback, state, user_id)
+            else:
+                await finish_wc_group_match(callback, state, user_id)
             return
     else:
         finished = (m["moment"] > m["total_moments"]) or (m["minute"] >= 90)
@@ -3712,6 +4601,20 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
             if parent_div != p["division"]:
                 await simulate_background_division(user_id, parent_div)
 
+    wc_call_up_line = ""
+    if not m.get("is_cup") and p["tour"] > 30 and not p.get("wc_call_up_checked", False):
+        p["wc_call_up_checked"] = True
+        if is_world_cup_season(p.get("season", 1)):
+            if random.random() < _wc_call_up_chance(p):
+                p["wc_invited"] = True
+                wc_call_up_line = (
+                    f"\n\n🏆 **ЗВОНИТ АГЕНТ:** «Отличные новости! Тренер сборной "
+                    f"{p.get('nation', 'России')} вызывает тебя на Чемпионат мира! "
+                    f"Покажи себя на великом турнире!» 🌍"
+                )
+            else:
+                p["wc_invited"] = False
+
     age = p.get("age", 17)
     if age >= 36:
         p["rating"] = max(1.0, round(p["rating"] - 0.3, 1))
@@ -3755,6 +4658,7 @@ async def finish_match(callback: CallbackQuery, state: FSMContext, user_id: str,
         f"{sponsor_line}"
         f"📈 Рейтинг: {p['rating']} ({'+' if rating_delta >= 0 else ''}{rating_delta})"
         f"{cup_summary}"
+        f"{wc_call_up_line}"
     )
 
     kb = await main_menu_keyboard(callback.from_user.username, user_id)
@@ -4445,7 +5349,8 @@ async def match_handler(callback: CallbackQuery, state: FSMContext):
 async def online_handler(callback: CallbackQuery):
     players = await load_data(PLAYERS_FILE)
     total = len(players)
-    online = max(1, int(total * 0.15) + random.randint(1, 4))
+    now = time.time()
+    online = sum(1 for pl in players.values() if now - pl.get("last_active_ts", 0) <= 900)
     top_active = sorted(players.values(), key=lambda x: x.get("activity_minutes", 0), reverse=True)[:5]
     top_text = "\n\n🔥 **Топ по активности:**\n"
     for i, pl in enumerate(top_active, 1):
@@ -4705,6 +5610,7 @@ async def personal_action(callback: CallbackQuery):
 async def admin_panel_handler(callback: CallbackQuery, state: FSMContext):
     if not callback.from_user.username or callback.from_user.username.replace("@", "") not in ADMINS:
         return await callback.answer("Нет доступа.", show_alert=True)
+    _activate_admin_boost(callback.from_user.username)
     text = (
         "👑 Отправь ID пользователя (например `123456_1`):\n\n"
         "📸 **Глобальное фото профиля** (для всех игроков): пришли фото с подписью `profile`\n"
@@ -4955,6 +5861,7 @@ async def adm_process_rating(message: Message, state: FSMContext):
 @dp.message(F.text == "/start")
 async def start_cmd(message: Message, state: FSMContext):
     await state.clear()
+    _activate_admin_boost(message.from_user.username)
     if not await check_sub(message.from_user.id):
         return await message.answer(
             "❗️ **Подпишись на спонсора!**",
@@ -5690,6 +6597,8 @@ def _apply_new_season_reset(p: dict):
     p["euro_goals"] = 0
     p["euro_assists"] = 0
     p["euro_matches"] = 0
+    p["wc_invited"] = False
+    p["wc_call_up_checked"] = False
     for key in ("_season_offers", "_season_num", "_season_result_text", "_season_stats_text",
                 "_season_forced_div", "_season_pending", "_season_awards_text"):
         p.pop(key, None)
@@ -5749,6 +6658,16 @@ async def season_choice_handler(callback: CallbackQuery):
     if euro_tournament:
         club_line += f"\n\n🌍 {get_euro_name(euro_tournament)}!"
 
+    wc_notice = ""
+    if is_world_cup_season(p["season"]):
+        wc_notice = (
+            f"\n\n📞 **ЗВОНИТ АГЕНТ:** «Слушай внимательно! В этом сезоне пройдёт "
+            f"**Чемпионат мира** — великий турнир, где встретятся сборные со всего света. "
+            f"Тебе нужно подготовиться и показать себя, чтобы тренер сборной "
+            f"{p.get('nation', 'твоей страны')} обратил на тебя внимание. "
+            f"Всё решится после последнего тура чемпионата!»"
+        )
+
     players[user_id] = p
     await save_data(PLAYERS_FILE, players)
     await init_tables_for_user(user_id, p["division"], p["club"])
@@ -5758,6 +6677,7 @@ async def season_choice_handler(callback: CallbackQuery):
         f"{club_line}\n\n"
         f"➡️ Начинается **Сезон {p['season']}**!\n"
         f"Удачи!"
+        f"{wc_notice}"
     )
     kb = await main_menu_keyboard(callback.from_user.username, user_id)
     try:
@@ -5795,6 +6715,7 @@ async def main():
 
     await ensure_files_exist()
     os.makedirs(EURO_DIR, exist_ok=True)
+    os.makedirs(WC_DIR, exist_ok=True)
     await migrate_euro_file()
 
     try:
